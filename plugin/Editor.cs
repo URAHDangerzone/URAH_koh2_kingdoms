@@ -10,16 +10,18 @@ namespace URAH_Kingdoms
     using Object = UnityEngine.Object;
 
     /// <summary>
-    /// The profile editor, opened from the profile list ("+ New profile", "Edit profile"): a modal window
-    /// over the kingdom selection, built from plain uGUI parts in the game's font (no game window has
-    /// input fields to copy on this screen). TMP input fields: the game ignores its hotkeys while one has
-    /// the focus (UICommon.IsInInput). Saves through the ProfileStore, which validates like everywhere else.
+    /// The profile editor, a main-menu window ("Kingdoms (URAH)" button, MainMenuPatch): the profiles on
+    /// the left (+ New), the selected one's fields on the right. Plain uGUI parts in the game's font (the
+    /// main menu has no window with input fields to copy). TMP input fields: the game ignores its hotkeys
+    /// while one has the focus (UICommon.IsInInput). Saves through the ProfileStore, which validates like
+    /// everywhere else; the arms come from the map's CoA table (CoAMapping), so no map has to be loaded.
     /// </summary>
     internal static class Editor
     {
         private static readonly Color Back = new Color(0.10f, 0.085f, 0.07f, 0.97f);
         private static readonly Color Field = new Color(0.24f, 0.21f, 0.18f, 1f);
         private static readonly Color ButtonColor = new Color(0.36f, 0.29f, 0.20f, 1f);
+        private static readonly Color Selected = new Color(0.62f, 0.47f, 0.24f, 1f);
         private static readonly Color Text = new Color(0.93f, 0.89f, 0.80f, 1f);
         private static readonly Color Error = new Color(1f, 0.55f, 0.45f, 1f);
 
@@ -34,15 +36,17 @@ namespace URAH_Kingdoms
             public TextMeshProUGUI DeleteLabel;
             public bool DeleteArmed;
             public List<string> ArmsKeys;
-            public Action<string> Done;
         }
 
-        public static void Open(UICampaignKingdomInfo panel, string id, Action<string> done)
+        private static Canvas canvas;
+
+        public static void Open(Canvas on, string id, string status = null)
         {
             Close();
+            canvas = on;
             try
             {
-                Build(panel, id, done);
+                Build(id, status);
             }
             catch (Exception e)
             {
@@ -62,15 +66,14 @@ namespace URAH_Kingdoms
 
         private static TMP_FontAsset font;
 
-        private static void Build(UICampaignKingdomInfo panel, string id, Action<string> done)
+        private static void Build(string id, string status)
         {
-            Canvas canvas = panel.GetComponentInParent<Canvas>()?.rootCanvas;
             if (canvas == null)
             {
                 Plugin.Log.LogWarning("Profile editor: no canvas");
                 return;
             }
-            font = panel.GetComponentInChildren<TextMeshProUGUI>(includeInactive: true)?.font ?? TMP_Settings.defaultFontAsset;
+            font = canvas.GetComponentInChildren<TextMeshProUGUI>(includeInactive: true)?.font ?? TMP_Settings.defaultFontAsset;
 
             // full-screen blocker: nothing behind the window takes clicks
             root = new GameObject("URAH_KingdomEditor", typeof(RectTransform), typeof(Image));
@@ -82,23 +85,38 @@ namespace URAH_Kingdoms
             root.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.55f);
             rootRt.SetAsLastSibling();
 
-            var window = new GameObject("Window", typeof(RectTransform), typeof(Image), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
-            var rt = (RectTransform)window.transform;
-            rt.SetParent(rootRt, worldPositionStays: false);
-            rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0.5f, 0.5f);
-            rt.sizeDelta = new Vector2(620f, 0f);
+            var window = new GameObject("Window", typeof(RectTransform), typeof(Image), typeof(HorizontalLayoutGroup), typeof(ContentSizeFitter));
+            var wrt = (RectTransform)window.transform;
+            wrt.SetParent(rootRt, worldPositionStays: false);
+            wrt.anchorMin = wrt.anchorMax = wrt.pivot = new Vector2(0.5f, 0.5f);
+            wrt.sizeDelta = new Vector2(940f, 0f);
             window.GetComponent<Image>().color = Back;
-            var layout = window.GetComponent<VerticalLayoutGroup>();
-            layout.padding = new RectOffset(24, 24, 20, 20);
-            layout.spacing = 8f;
-            layout.childControlWidth = layout.childControlHeight = true;
-            layout.childForceExpandWidth = true;
-            layout.childForceExpandHeight = false;
+            var h = window.GetComponent<HorizontalLayoutGroup>();
+            h.padding = new RectOffset(20, 20, 20, 20);
+            h.spacing = 20f;
+            h.childControlWidth = h.childControlHeight = true;
+            h.childForceExpandWidth = false;
+            h.childForceExpandHeight = true;
             window.GetComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
             Profile profile = id != null ? Plugin.Profiles.Load(id) : null;
-            var form = new Form { Id = profile != null ? id : null, Done = done };
+            var form = new Form { Id = profile != null ? id : null };
 
+            // left: the profiles
+            RectTransform list = Column(wrt, 260f, 0f);
+            Label(list, UiTexts.Get("profiles"), 22f, FontStyles.Bold);
+            foreach (string pid in Plugin.Profiles.Ids())
+            {
+                Profile p = Plugin.Profiles.Load(pid);
+                string text = p != null ? p.Name : pid + " (" + UiTexts.Get("invalid") + ")";
+                string target = pid;
+                TextMeshProUGUI l = Button(list, text, 0f, () => Open(canvas, target), pid == form.Id);
+                l.alignment = TextAlignmentOptions.MidlineLeft;
+            }
+            Button(list, UiTexts.Get("new"), 0f, () => Open(canvas, null), form.Id == null);
+
+            // right: the fields
+            RectTransform rt = Column(wrt, 0f, 1f);
             Label(rt, UiTexts.Get(form.Id != null ? "editor_edit" : "editor_new"), 24f, FontStyles.Bold);
             form.Name = Input(Row(rt, UiTexts.Get("f_name")), Profile.MaxName);
             form.Ruler = Input(Row(rt, UiTexts.Get("f_ruler")), Profile.MaxName);
@@ -133,24 +151,23 @@ namespace URAH_Kingdoms
             {
                 form.DeleteLabel = Button(buttons, UiTexts.Get("delete"), 0f, () => Delete(form));
             }
-            Button(buttons, UiTexts.Get("cancel"), 0f, Close);
+            Button(buttons, UiTexts.Get("close"), 0f, Close);
 
-            form.ArmsKeys = ArmsKeys(panel.Kingdom?.game);
+            form.ArmsKeys = ArmsKeys();
             if (profile != null)
             {
                 Fill(form, profile);
             }
-            else
+            else if (id != null)
             {
-                // a new profile starts with the look of the kingdom it is made for
-                form.Arms.text = panel.Kingdom?.Name ?? "";
-                if (panel.Kingdom?.visuals is global::Kingdom view && Assignments.Get(panel.Kingdom.Name) == null)
-                {
-                    form.Color.text = "#" + ColorUtility.ToHtmlStringRGB(view.MapColor);
-                }
+                Status(form, string.Format(UiTexts.Get("invalid_file"), id), error: true); // the log has why
             }
             UpdateSwatch(form);
             UpdateArmsName(form);
+            if (status != null)
+            {
+                Status(form, status, error: false);
+            }
         }
 
         private static void Fill(Form form, Profile p)
@@ -202,8 +219,7 @@ namespace URAH_Kingdoms
                 return;
             }
             Plugin.Log.LogInfo($"Profile '{id}' saved: {p}");
-            Close();
-            form.Done?.Invoke(id);
+            Open(canvas, id, UiTexts.Get("saved"));
         }
 
         private static void Delete(Form form)
@@ -217,8 +233,7 @@ namespace URAH_Kingdoms
             if (Plugin.Profiles.Delete(form.Id))
             {
                 Plugin.Log.LogInfo($"Profile '{form.Id}' deleted");
-                Close();
-                form.Done?.Invoke("");
+                Open(canvas, null);
             }
         }
 
@@ -256,15 +271,17 @@ namespace URAH_Kingdoms
             form.Swatch.color = ok ? c : new Color(0f, 0f, 0f, 0.3f);
         }
 
-        /// <summary>Keys of the kingdoms on the menu map that have arms, sorted.</summary>
-        private static List<string> ArmsKeys(Logic.Game game)
+        /// <summary>Keys of the kingdoms with arms in the map's CoA table (without the era variants), sorted.</summary>
+        private static List<string> ArmsKeys()
         {
-            if (game?.kingdoms == null)
+            string map = GameLogic.Get(create: false)?.map_name;
+            Logic.CoAMapping mapping = Logic.CoAMapping.GetMapping(string.IsNullOrEmpty(map) ? "europe" : map);
+            if (mapping?.mapping == null)
             {
                 return new List<string>();
             }
-            return game.kingdoms.Where(k => k != null && k.CoAIndex > 0 && !string.IsNullOrEmpty(k.Name))
-                .Select(k => k.Name).Distinct().OrderBy(n => n, StringComparer.Ordinal).ToList();
+            return mapping.mapping.Where(kv => kv.Value > 0 && kv.Key.IndexOf('.') < 0).Select(kv => kv.Key)
+                .OrderBy(k => k, StringComparer.Ordinal).ToList();
         }
 
         private static void CycleArms(Form form, int step)
@@ -304,6 +321,25 @@ namespace URAH_Kingdoms
             t.raycastTarget = false;
             UIText.SetText(t, text);
             return t;
+        }
+
+        private static RectTransform Column(RectTransform parent, float width, float flexible)
+        {
+            var go = new GameObject("Column", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(LayoutElement));
+            var rt = (RectTransform)go.transform;
+            rt.SetParent(parent, worldPositionStays: false);
+            var v = go.GetComponent<VerticalLayoutGroup>();
+            v.spacing = 8f;
+            v.childControlWidth = v.childControlHeight = true;
+            v.childForceExpandWidth = true;
+            v.childForceExpandHeight = false;
+            var le = go.GetComponent<LayoutElement>();
+            if (width > 0f)
+            {
+                le.preferredWidth = width;
+            }
+            le.flexibleWidth = flexible;
+            return rt;
         }
 
         /// <summary>A row with a label in front; the controls added to it share the rest of the width.</summary>
@@ -372,11 +408,11 @@ namespace URAH_Kingdoms
         }
 
         /// <summary>A plain button; width 0: shares the row.</summary>
-        private static TextMeshProUGUI Button(RectTransform row, string text, float width, Action onClick)
+        private static TextMeshProUGUI Button(RectTransform row, string text, float width, Action onClick, bool selected = false)
         {
             var go = new GameObject("Button", typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
             go.transform.SetParent(row, worldPositionStays: false);
-            go.GetComponent<Image>().color = ButtonColor;
+            go.GetComponent<Image>().color = selected ? Selected : ButtonColor;
             var le = go.GetComponent<LayoutElement>();
             le.preferredHeight = 36f;
             if (width > 0f)
@@ -403,7 +439,8 @@ namespace URAH_Kingdoms
             var lrt = (RectTransform)label.transform;
             lrt.anchorMin = Vector2.zero;
             lrt.anchorMax = Vector2.one;
-            lrt.offsetMin = lrt.offsetMax = Vector2.zero;
+            lrt.offsetMin = new Vector2(10f, 0f);
+            lrt.offsetMax = new Vector2(-10f, 0f);
             return label;
         }
     }

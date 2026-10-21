@@ -7,12 +7,16 @@ namespace URAH_Kingdoms
     {
         private static readonly Dictionary<string, string> En = new Dictionary<string, string>
         {
-            ["override"] = "Override kingdom",
             ["override_as"] = "As {0}",
-            ["override_tip"] = "Play this kingdom with the name, colour, arms and ruler of one of your profiles. Only the look changes.",
-            ["none"] = "No override",
-            ["new"] = "+ New profile",
-            ["edit"] = "Edit profile",
+            ["override_tip"] = "Play this kingdom as itself, or with the name, colour, arms and ruler of one of your profiles (made under Kingdoms in the main menu). Only the look changes.",
+            ["menu"] = "Kingdoms (URAH)",
+            ["menu_tip"] = "Make and edit your kingdom profiles; choose one when setting up a campaign.",
+            ["profiles"] = "Your kingdoms",
+            ["invalid"] = "invalid",
+            ["invalid_file"] = "The file of '{0}' is not valid (see BepInEx/LogOutput.log); saving replaces it.",
+            ["saved"] = "Saved.",
+            ["close"] = "Close",
+            ["new"] = "+ New kingdom",
             ["editor_new"] = "New kingdom profile",
             ["editor_edit"] = "Edit kingdom profile",
             ["f_name"] = "Kingdom name",
@@ -34,17 +38,20 @@ namespace URAH_Kingdoms
             ["save_failed"] = "Saving failed (see BepInEx/LogOutput.log).",
             ["delete"] = "Delete",
             ["delete_confirm"] = "Really delete?",
-            ["cancel"] = "Cancel",
         };
 
         private static readonly Dictionary<string, string> De = new Dictionary<string, string>
         {
-            ["override"] = "Königreich überschreiben",
             ["override_as"] = "Als {0}",
-            ["override_tip"] = "Dieses Königreich mit Name, Farbe, Wappen und Herrscher eines deiner Profile spielen. Nur das Aussehen ändert sich.",
-            ["none"] = "Nicht überschreiben",
-            ["new"] = "+ Neues Profil",
-            ["edit"] = "Profil bearbeiten",
+            ["override_tip"] = "Dieses Königreich so spielen, wie es ist, oder mit Name, Farbe, Wappen und Herrscher eines deiner Profile (angelegt unter Königreiche im Hauptmenü). Nur das Aussehen ändert sich.",
+            ["menu"] = "Königreiche (URAH)",
+            ["menu_tip"] = "Eigene Königreichsprofile anlegen und bearbeiten; beim Einrichten einer Kampagne eines wählen.",
+            ["profiles"] = "Deine Königreiche",
+            ["invalid"] = "ungültig",
+            ["invalid_file"] = "Die Datei von '{0}' ist ungültig (siehe BepInEx/LogOutput.log); Speichern ersetzt sie.",
+            ["saved"] = "Gespeichert.",
+            ["close"] = "Schließen",
+            ["new"] = "+ Neues Königreich",
             ["editor_new"] = "Neues Königreichsprofil",
             ["editor_edit"] = "Königreichsprofil bearbeiten",
             ["f_name"] = "Name des Reichs",
@@ -66,7 +73,6 @@ namespace URAH_Kingdoms
             ["save_failed"] = "Speichern fehlgeschlagen (siehe BepInEx/LogOutput.log).",
             ["delete"] = "Löschen",
             ["delete_confirm"] = "Wirklich löschen?",
-            ["cancel"] = "Abbrechen",
         };
 
         public static string Get(string key)

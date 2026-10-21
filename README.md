@@ -9,27 +9,22 @@ stay those of the replaced kingdom. Works in singleplayer and multiplayer, with 
 
 ## Playing
 
-- **Singleplayer**: click a kingdom in the campaign setup; "Override kingdom" (where the multiplayer
-  lobby has "Pick kingdom") opens the list of your profiles, "+ New profile" and "Edit profile". The
-  map shows the selected kingdom with the chosen profile.
-- **Multiplayer**: pick a kingdom as usual; the same button then takes the place of "picked by you".
+- **Main menu → Kingdoms (URAH)**: make and edit your kingdom profiles (name, ruler, colour, arms,
+  English adjective), copy a profile as a kingdom code or paste one.
+- **Singleplayer**: click a kingdom in the campaign setup; the dropdown where the multiplayer lobby has
+  "Pick kingdom" offers the kingdom itself (the default) and your profiles. The map shows the choice.
+- **Multiplayer**: pick a kingdom as usual; the same dropdown then takes the place of "picked by you".
   The other players see your kingdom with your profile on the map and in the player list. The host
   checks every profile when the game starts; `[Multiplayer] AllowOtherProfiles = false` in the host's
   config shows only the host's own. Players without the plugin see the kingdoms as they are.
 - **Saves** keep the profiles they were started with (in the kingdoms and in the campaign: the save
-  list shows the campaign's name and arms), whatever profile is chosen later.
-
-It is a mod (`URAH_Kingdoms/`) plus a BepInEx 5 plugin (`plugin/`) that does the work. The mod holds
-no game data, only `Defs/URAH_Kingdoms.def` with the plugin version: without a def file the game
-treats the mod as texts-only and leaves it out of the multiplayer mod check, and the version changes
-the mod checksum with every release. The plugin only patches the game while the mod is active.
+  list shows the campaign's name and arms), whatever is chosen later.
 
 ## Profiles
 
 A profile is a JSON file in `BepInEx/config/urah.kingdoms/` (outside the mod, so not part of the mod
 checksum); its file name without `.json` is its id (`a-z`, `0-9`, `_`, `-`). The editor writes them; they can
-also be edited by hand. The profile to play is `[General] Profile` in
-`BepInEx/config/urah.koh2.kingdoms.cfg` (the button sets it); empty plays the picked kingdom as it is.
+also be edited by hand.
 
 ```json
 {

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using HarmonyLib;
 using Logic;
@@ -12,10 +13,12 @@ namespace URAH_Kingdoms
     using Object = UnityEngine.Object;
 
     /// <summary>
-    /// Singleplayer kingdom selection: in the kingdom panel (UICampaignKingdomInfo, the MP lobby's too) an
-    /// "Override kingdom" button sits where the lobby's "Pick kingdom" does (hidden in SP); it opens a list
-    /// of the profiles. The choice is the config's Profile, which the new game takes (Patches.LoadMapPatch).
-    /// The selected kingdom shows the chosen profile on the menu map and in the panel (Preview).
+    /// The kingdom choice in the campaign setup and the lobby (UICampaignKingdomInfo): a dropdown where the
+    /// lobby's "Pick kingdom" sits (hidden in singleplayer; in the lobby, once picked, the game shows
+    /// "picked by you" there instead). Its first entry is the kingdom itself, then the player's profiles.
+    /// A copy of the campaign settings' dropdown (UICampaignSettings' rule prototype), so it looks like the
+    /// game's. The choice (Plugin.ProfileId) starts with the kingdom itself in every setup and lobby; the
+    /// new game takes it (Patches.LoadMapPatch, Lobby.Publish). Profiles are made in the main menu (Editor).
     /// </summary>
     internal static class Selection
     {
@@ -23,20 +26,21 @@ namespace URAH_Kingdoms
             AccessTools.FieldRefAccess<UICampaignKingdomInfo, BSGButton>("m_PickKingdom");
         private static readonly AccessTools.FieldRef<UICampaignKingdomInfo, TextMeshProUGUI> pickWarning =
             AccessTools.FieldRefAccess<UICampaignKingdomInfo, TextMeshProUGUI>("m_PickWarning");
+        private static readonly AccessTools.FieldRef<UICampaignSettings, GameObject> rulePrototype =
+            AccessTools.FieldRefAccess<UICampaignSettings, GameObject>("m_SettingsRulePrototype");
 
         private sealed class Ui
         {
-            public BSGButton Button;
-            public TextMeshProUGUI Label;
-            public RectTransform List;
-            public readonly List<BSGButton> Entries = new List<BSGButton>();
+            public BSGDropdown Dropdown;
+            public readonly List<string> Ids = new List<string>(); // per option; "" = the kingdom itself
+            public bool Filling;
         }
 
         private static readonly ConditionalWeakTable<UICampaignKingdomInfo, Ui> uis = new ConditionalWeakTable<UICampaignKingdomInfo, Ui>();
 
         /// <summary>
         /// Before the start, a new campaign: singleplayer, a kingdom the player may pick; multiplayer, the
-        /// kingdom the player picked (the game shows "picked by you" there instead of the pick button).
+        /// kingdom the player picked.
         /// </summary>
         private static bool Applies(UICampaignKingdomInfo panel)
         {
@@ -67,7 +71,7 @@ namespace URAH_Kingdoms
                 }
                 catch (Exception e)
                 {
-                    Plugin.Log.LogError($"Override button: {e}");
+                    Plugin.Log.LogError($"Kingdom dropdown: {e}");
                 }
             }
         }
@@ -88,138 +92,110 @@ namespace URAH_Kingdoms
                 }
                 uis.Add(panel, ui);
             }
-            ui.Button.gameObject.SetActive(applies);
-            CloseList(ui);
-            if (applies && panel.Campaign.IsMultiplayerCampaign())
+            ui.Dropdown.gameObject.SetActive(applies);
+            if (!applies)
             {
-                pickWarning(panel)?.gameObject.SetActive(false); // "picked by you": the button takes its place
+                return;
             }
-            if (applies)
+            if (panel.Campaign.IsMultiplayerCampaign())
             {
-                Profile profile = Plugin.Instance.ActiveProfile();
-                UIText.SetText(ui.Label, profile != null ? string.Format(UiTexts.Get("override_as"), profile.Name) : UiTexts.Get("override"));
+                pickWarning(panel)?.gameObject.SetActive(false); // "picked by you": the dropdown takes its place
             }
+            Fill(panel, ui);
         }
 
         private static Ui Create(UICampaignKingdomInfo panel)
         {
-            BSGButton original = pickKingdom(panel);
-            if (original == null)
+            BSGButton pick = pickKingdom(panel);
+            UICampaignSettings settings = panel.transform.root.GetComponentsInChildren<UICampaignSettings>(includeInactive: true).FirstOrDefault();
+            GameObject prototype = settings != null ? rulePrototype(settings) : null;
+            BSGDropdown template = prototype != null ? prototype.GetComponentInChildren<BSGDropdown>(includeInactive: true) : null;
+            if (pick == null || template == null)
             {
-                Plugin.Log.LogWarning("Kingdom panel has no pick button, no override button");
+                Plugin.Log.LogWarning($"Kingdom dropdown not made: pick button {(pick != null ? "found" : "missing")}, dropdown template {(template != null ? "found" : "missing")}");
                 return null;
             }
             var ui = new Ui();
-            ui.Button = Copy(original, "URAH_OverrideKingdom", btn => ToggleList(panel, ui));
-            ui.Label = ui.Button.GetComponentInChildren<TextMeshProUGUI>(includeInactive: true);
-            Tooltip.Get(ui.Button.gameObject).SetText("#" + UiTexts.Get("override_tip"));
+            BSGDropdown dropdown = Object.Instantiate(template, pick.transform.parent, worldPositionStays: false);
+            dropdown.name = "URAH_KingdomDropdown";
+            dropdown.transform.SetSiblingIndex(pick.transform.GetSiblingIndex() + 1);
+            // the button's place and size
+            var from = (RectTransform)pick.transform;
+            var to = (RectTransform)dropdown.transform;
+            to.anchorMin = from.anchorMin;
+            to.anchorMax = from.anchorMax;
+            to.pivot = from.pivot;
+            to.anchoredPosition = from.anchoredPosition;
+            Vector2 size = from.rect.size.x > 1f ? from.rect.size : from.sizeDelta;
+            to.sizeDelta = size;
+            LayoutElement own = dropdown.GetComponent<LayoutElement>() ?? dropdown.gameObject.AddComponent<LayoutElement>();
+            LayoutElement pickLayout = pick.GetComponent<LayoutElement>();
+            own.ignoreLayout = pickLayout != null && pickLayout.ignoreLayout;
+            own.preferredWidth = pickLayout != null && pickLayout.preferredWidth > 0f ? pickLayout.preferredWidth : size.x;
+            own.preferredHeight = pickLayout != null && pickLayout.preferredHeight > 0f ? pickLayout.preferredHeight : size.y;
+            dropdown.onValueChanged.RemoveAllListeners();
+            dropdown.onValueChanged.AddListener(index => Chosen(panel, ui, index));
+            dropdown.OnShow = () => Fill(panel, ui); // profiles made in the main menu meanwhile
+            dropdown.interactable = true;
+            Tooltip.Get(dropdown.gameObject).SetText("#" + UiTexts.Get("override_tip"));
+            dropdown.gameObject.SetActive(true);
+            ui.Dropdown = dropdown;
             return ui;
         }
 
-        private static BSGButton Copy(BSGButton original, string name, BSGButton.OnClick onClick)
+        /// <summary>Options: the kingdom itself, then every valid profile; the current choice selected.</summary>
+        private static void Fill(UICampaignKingdomInfo panel, Ui ui)
         {
-            BSGButton copy = Object.Instantiate(original, original.transform.parent, worldPositionStays: false);
-            copy.name = name;
-            copy.transform.SetSiblingIndex(original.transform.GetSiblingIndex() + 1);
-            copy.onClick = onClick; // not serialized: the copy starts without the game's handler
-            copy.Enable(true);
-            return copy;
-        }
-
-        private static void CloseList(Ui ui)
-        {
-            if (ui.List != null)
+            ui.Filling = true;
+            try
             {
-                ui.List.gameObject.SetActive(false);
-            }
-        }
-
-        /// <summary>The list: "No override" and every valid profile, as copies of the button stacked above it.</summary>
-        private static void ToggleList(UICampaignKingdomInfo panel, Ui ui)
-        {
-            if (ui.List != null && ui.List.gameObject.activeSelf)
-            {
-                CloseList(ui);
-                return;
-            }
-            if (ui.List == null)
-            {
-                var go = new GameObject("URAH_ProfileList", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
-                ui.List = (RectTransform)go.transform;
-                ui.List.SetParent(ui.Button.transform.parent, worldPositionStays: false);
-                var layout = go.GetComponent<VerticalLayoutGroup>();
-                layout.childControlWidth = layout.childControlHeight = false;
-                layout.childForceExpandWidth = layout.childForceExpandHeight = false;
-                layout.spacing = 2f;
-                go.GetComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-                go.AddComponent<LayoutElement>().ignoreLayout = true; // floats over the panel, the panel's layout stays
-            }
-            foreach (BSGButton entry in ui.Entries)
-            {
-                Object.Destroy(entry.gameObject);
-            }
-            ui.Entries.Clear();
-
-            var choices = new List<KeyValuePair<string, string>> { new KeyValuePair<string, string>("", UiTexts.Get("none")) };
-            foreach (string id in Plugin.Profiles.Ids())
-            {
-                Profile profile = Plugin.Profiles.Load(id);
-                if (profile != null)
+                ui.Ids.Clear();
+                ui.Dropdown.options.Clear();
+                Logic.Kingdom kingdom = panel.Kingdom;
+                ui.Ids.Add("");
+                ui.Dropdown.options.Add(new TMP_Dropdown.OptionData(Defs.Localize("tn_" + kingdom.ActiveName))); // its own name, not the preview's
+                foreach (string id in Plugin.Profiles.Ids())
                 {
-                    choices.Add(new KeyValuePair<string, string>(id, profile.Name));
+                    Profile profile = Plugin.Profiles.Load(id);
+                    if (profile != null)
+                    {
+                        ui.Ids.Add(id);
+                        ui.Dropdown.options.Add(new TMP_Dropdown.OptionData(string.Format(UiTexts.Get("override_as"), profile.Name)));
+                    }
                 }
+                int current = ui.Ids.IndexOf(Plugin.Instance.ProfileId);
+                if (current < 0)
+                {
+                    current = 0; // the chosen profile was deleted or broke
+                    if (Plugin.Instance.ProfileId.Length > 0)
+                    {
+                        Select(panel, "");
+                    }
+                }
+                ui.Dropdown.SetValueWithoutNotify(current);
+                ui.Dropdown.RefreshShownValue();
+                ui.Dropdown.template.sizeDelta = new Vector2(0f, 25f * Math.Min(ui.Ids.Count, 10));
             }
-            string current = Plugin.Instance.ProfileId;
-            if (Plugin.Instance.ActiveProfile() != null)
+            finally
             {
-                choices.Add(new KeyValuePair<string, string>(EditChoice, UiTexts.Get("edit")));
+                ui.Filling = false;
             }
-            choices.Add(new KeyValuePair<string, string>(NewChoice, UiTexts.Get("new")));
-            var size = ((RectTransform)ui.Button.transform).rect.size;
-            foreach (var choice in choices)
-            {
-                string id = choice.Key;
-                BSGButton entry = Object.Instantiate(ui.Button, ui.List, worldPositionStays: false);
-                entry.name = "URAH_Profile_" + (id ?? "hint");
-                entry.onClick = btn => Choose(panel, ui, id);
-                entry.SetSelected(id == current, force_update: true);
-                Tooltip.Get(entry.gameObject).Clear();
-                ((RectTransform)entry.transform).sizeDelta = size;
-                UIText.SetText(entry.GetComponentInChildren<TextMeshProUGUI>(includeInactive: true), choice.Value);
-                entry.gameObject.SetActive(true);
-                ui.Entries.Add(entry);
-            }
-            // right above the button, as wide
-            var button = (RectTransform)ui.Button.transform;
-            ui.List.anchorMin = ui.List.anchorMax = button.anchorMin;
-            ui.List.pivot = new Vector2(button.pivot.x, 0f);
-            ui.List.sizeDelta = new Vector2(size.x, 0f);
-            ui.List.gameObject.SetActive(true);
-            ui.List.SetAsLastSibling();
-            var corners = new Vector3[4];
-            button.GetWorldCorners(corners);
-            ui.List.position = new Vector3((corners[0].x + corners[2].x) / 2f + (ui.List.pivot.x - 0.5f) * (corners[2].x - corners[0].x), corners[1].y, button.position.z);
         }
 
-        private const string NewChoice = "\u0001new", EditChoice = "\u0001edit"; // never a profile id
-
-        private static void Choose(UICampaignKingdomInfo panel, Ui ui, string id)
+        private static void Chosen(UICampaignKingdomInfo panel, Ui ui, int index)
         {
-            CloseList(ui);
-            if (id == NewChoice || id == EditChoice)
+            if (ui.Filling || index < 0 || index >= ui.Ids.Count)
             {
-                string editId = id == EditChoice ? Plugin.Instance.ProfileId : null;
-                Editor.Open(panel, editId, saved => Select(panel, saved, force: true));
                 return;
             }
-            Select(panel, id, force: false);
+            Select(panel, ui.Ids[index]);
         }
 
         /// <summary>Makes a profile the chosen one and shows it (map, panel; lobby: tells the others).</summary>
-        public static void Select(UICampaignKingdomInfo panel, string id, bool force)
+        private static void Select(UICampaignKingdomInfo panel, string id)
         {
             id = id ?? "";
-            if (id == Plugin.Instance.ProfileId && !force)
+            if (id == Plugin.Instance.ProfileId)
             {
                 return;
             }
@@ -235,9 +211,29 @@ namespace URAH_Kingdoms
             {
                 Preview.Single(panel.Kingdom);
             }
-            if (panel != null && panel.Kingdom != null)
+            if (panel.Kingdom != null)
             {
-                panel.SetKingdom(panel.Campaign, panel.Kingdom, panel.Realm); // name and crest of the panel, and Update
+                panel.SetKingdom(panel.Campaign, panel.Kingdom, panel.Realm); // name and crest of the panel
+            }
+        }
+
+        /// <summary>Every campaign setup starts with the kingdom itself.</summary>
+        public static void Reset()
+        {
+            if (Plugin.Instance.ProfileId.Length > 0)
+            {
+                Plugin.Log.LogInfo("Profile choice reset");
+            }
+            Plugin.Instance.ProfileId = "";
+        }
+
+        [HarmonyPatch(typeof(UISingleplayerCampaign), nameof(UISingleplayerCampaign.SetCampaignClient))]
+        private static class SingleplayerOpenPatch
+        {
+            private static void Prefix()
+            {
+                Reset();
+                Preview.Clear();
             }
         }
 
@@ -261,6 +257,7 @@ namespace URAH_Kingdoms
         {
             private static void Prefix()
             {
+                Reset();
                 Preview.Clear();
             }
         }

@@ -23,7 +23,6 @@ namespace URAH_Kingdoms
         internal static Plugin Instance;
 
         private ModLink link;
-        private ConfigEntry<string> profileId;
         private ConfigEntry<bool> allowOthers;
 
         private void Awake()
@@ -31,30 +30,33 @@ namespace URAH_Kingdoms
             Log = Logger;
             Instance = this;
             Profiles = new ProfileStore(Path.Combine(Paths.ConfigPath, "urah.kingdoms"), Log);
-            profileId = Config.Bind("General", "Profile", "",
-                $"Id of the kingdom profile to play (file name without .json in {Profiles.Folder}); empty: play the picked kingdom as it is");
             allowOthers = Config.Bind("Multiplayer", "AllowOtherProfiles", true,
                 "As host: the other players may play their own profiles (yours always shows)");
             link = new ModLink(Guid, typeof(Plugin).Assembly, Log);
             link.Changed += Lobby.PublishInLobby;
+            link.Changed += active =>
+            {
+                if (!active)
+                {
+                    MainMenu.Remove();
+                }
+            };
             Log.LogInfo($"{Name} {Version} loaded");
-            Profile profile = ActiveProfile();
-            Log.LogInfo(profile != null ? $"Profile '{profileId.Value}': {profile}" : "No kingdom profile chosen");
+            Log.LogInfo($"{Profiles.Ids().Count} kingdom profiles in {Profiles.Folder}");
         }
 
-        /// <summary>Id of the chosen profile ("" for none); setting it saves the config.</summary>
-        internal string ProfileId
-        {
-            get => profileId.Value.Trim();
-            set => profileId.Value = value ?? "";
-        }
+        /// <summary>
+        /// Id of the profile chosen for the campaign being set up ("" plays the picked kingdom as it is).
+        /// Not saved: every campaign setup and lobby starts with the kingdom itself (Selection resets it).
+        /// </summary>
+        internal string ProfileId { get; set; } = "";
 
         internal bool AllowOthers => allowOthers.Value;
 
         /// <summary>The chosen profile, read fresh from its file; null when none is chosen or it is invalid (logged).</summary>
         internal Profile ActiveProfile()
         {
-            string id = profileId.Value.Trim();
+            string id = ProfileId ?? "";
             return id.Length == 0 ? null : Profiles.Load(id);
         }
     }

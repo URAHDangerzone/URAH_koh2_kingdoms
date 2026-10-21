@@ -176,6 +176,7 @@ namespace URAH_Kingdoms
             {
                 if (campaign != null)
                 {
+                    Selection.Reset(); // every lobby starts with the kingdom itself
                     Publish(campaign, true, false);
                 }
             }
