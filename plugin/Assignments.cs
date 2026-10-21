@@ -22,6 +22,7 @@ namespace URAH_Kingdoms
             public Profile Profile;
             public string TextKey;
             public UnityEngine.Color? Color;
+            public bool Failed;
         }
 
         private static readonly Dictionary<string, Entry> byKingdom = new Dictionary<string, Entry>();
@@ -58,9 +59,23 @@ namespace URAH_Kingdoms
                 return null;
             }
             Defs defs = Defs.Get();
-            if (defs != null && !defs.texts.ContainsKey(e.TextKey))
+            if (defs == null || e.Failed)
             {
-                Texts.Register(defs, e.TextKey, e.Profile);
+                return null;
+            }
+            if (!defs.texts.ContainsKey(e.TextKey))
+            {
+                try
+                {
+                    Texts.Register(defs, e.TextKey, e.Profile);
+                }
+                catch (Exception ex)
+                {
+                    // the game's own name from now on, instead of an error on every lookup
+                    e.Failed = true;
+                    Plugin.Log.LogError($"Registering the name '{e.Profile.Name}' failed, {kingdom} keeps its own: {ex}");
+                    return null;
+                }
             }
             return e.TextKey;
         }
@@ -81,7 +96,7 @@ namespace URAH_Kingdoms
     /// </summary>
     internal static class Texts
     {
-        private static readonly AccessTools.FieldRef<Defs, string> loadingLanguage = AccessTools.FieldRefAccess<Defs, string>("loading_language");
+        private static readonly AccessTools.FieldRef<string> loadingLanguage = AccessTools.StaticFieldRefAccess<string>(AccessTools.Field(typeof(Defs), "loading_language"));
         private static readonly Action<Defs, string, string> loadCsvTexts =
             AccessTools.MethodDelegate<Action<Defs, string, string>>(AccessTools.Method(typeof(Defs), "LoadCSVTexts"));
 
@@ -113,15 +128,15 @@ namespace URAH_Kingdoms
             }
             // the profile forbids the delimiters and quotes, so cells need no quoting
             string csv = header + "\n" + (defaults != null ? defaults + "\n" : "") + string.Join(delimiter.ToString(), cells) + "\n";
-            string previous = loadingLanguage(defs);
+            string previous = loadingLanguage();
             try
             {
-                loadingLanguage(defs) = lang;
+                loadingLanguage() = lang;
                 loadCsvTexts(defs, $"urah_kingdoms/{lang}_teritories.csv", csv);
             }
             finally
             {
-                loadingLanguage(defs) = previous;
+                loadingLanguage() = previous;
             }
             Plugin.Log.LogInfo($"Registered {key} = '{Defs.Localize(key)}' ({lang})");
         }
