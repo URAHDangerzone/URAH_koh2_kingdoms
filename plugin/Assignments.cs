@@ -21,7 +21,7 @@ namespace URAH_Kingdoms
     internal static class Assignments
     {
         public const string KeyPrefix = "tn_urah_ck_";
-        public const string VarKey = "urah_kingdoms_profile";
+        public const string VarKey = Lobby.VarKey;
 
         private static int nextKey;
 

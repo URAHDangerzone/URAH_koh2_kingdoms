@@ -11,8 +11,8 @@ namespace URAH_Kingdoms
     /// saved), map colour (the view kingdom's MapColor) and, in a new game, the first ruler's name
     /// (Character.ChangeName, the game's own rename: synced and saved).
     ///
-    /// A new game takes the configured profile and stores it in the kingdom; a loaded game takes the
-    /// profiles stored in its kingdoms (the vars come with the objects, after LoadMap, so in
+    /// A new game takes the configured profile (multiplayer: each player's, see Lobby) and stores it in
+    /// the kingdom; a loaded game and a multiplayer client take the profiles stored in the kingdoms (the vars come with the objects, after LoadMap, so in
     /// Game.OnGameStarted) and refreshes arms, colour and labels the way a union rename does.
     /// </summary>
     internal static class Patches
@@ -28,8 +28,16 @@ namespace URAH_Kingdoms
                     return; // a battle loads its own map in another Game; the campaign's assignments stay
                 }
                 Assignments.Clear();
-                if (!new_game || __instance.campaign == null || __instance.campaign.IsMultiplayerCampaign())
+                if (!new_game || __instance.campaign == null)
                 {
+                    return;
+                }
+                if (__instance.campaign.IsMultiplayerCampaign())
+                {
+                    if (__instance.IsAuthority())
+                    {
+                        Lobby.AssignPlayers(__instance.campaign);
+                    }
                     return;
                 }
                 string kingdom = __instance.multiplayer?.playerData?.kingdomName;
@@ -82,7 +90,9 @@ namespace URAH_Kingdoms
         {
             private static void Postfix(Logic.Game __instance, string started_from)
             {
-                if (started_from != "load_game" || __instance.type != "world_view")
+                // "load_game": a save was loaded (host, and clients through GameLoadedState); "new_game": a
+                // client got the full game state, so the kingdoms carry the host's vars
+                if (__instance.type != "world_view" || (started_from != "load_game" && __instance.IsAuthority()))
                 {
                     return;
                 }
@@ -96,7 +106,7 @@ namespace URAH_Kingdoms
                 string suffix = string.IsNullOrEmpty(__instance.map_period) ? null : __instance.dt.GetString("Periods." + __instance.map_name + "." + __instance.map_period);
                 foreach (Logic.Kingdom kingdom in kingdoms)
                 {
-                    Plugin.Log.LogInfo($"{kingdom.Name} plays as {Assignments.Get(kingdom.Name)} (from the save)");
+                    Plugin.Log.LogInfo($"{kingdom.Name} plays as {Assignments.Get(kingdom.Name)} (stored in the kingdom)");
                     ArmsPatch.Apply(map, kingdom, suffix);
                     kingdom.NotifyListeners("name_changed"); // the view kingdom reloads colours, arms and labels
                 }

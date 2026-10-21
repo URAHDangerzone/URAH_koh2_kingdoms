@@ -33,6 +33,7 @@ namespace URAH_Kingdoms
             profileId = Config.Bind("General", "Profile", "",
                 $"Id of the kingdom profile to play (file name without .json in {Profiles.Folder}); empty: play the picked kingdom as it is");
             link = new ModLink(Guid, typeof(Plugin).Assembly, Log);
+            link.Changed += Lobby.PublishInLobby;
             Log.LogInfo($"{Name} {Version} loaded");
             Profile profile = ActiveProfile();
             Log.LogInfo(profile != null ? $"Profile '{profileId.Value}': {profile}" : "No kingdom profile chosen");
