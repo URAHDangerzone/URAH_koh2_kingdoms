@@ -107,9 +107,7 @@ namespace URAH_Kingdoms
         private static Ui Create(UICampaignKingdomInfo panel)
         {
             BSGButton pick = pickKingdom(panel);
-            UICampaignSettings settings = panel.transform.root.GetComponentsInChildren<UICampaignSettings>(includeInactive: true).FirstOrDefault();
-            GameObject prototype = settings != null ? rulePrototype(settings) : null;
-            BSGDropdown template = prototype != null ? prototype.GetComponentInChildren<BSGDropdown>(includeInactive: true) : null;
+            BSGDropdown template = Template();
             if (pick == null || template == null)
             {
                 Plugin.Log.LogWarning($"Kingdom dropdown not made: pick button {(pick != null ? "found" : "missing")}, dropdown template {(template != null ? "found" : "missing")}");
@@ -141,6 +139,37 @@ namespace URAH_Kingdoms
             dropdown.gameObject.SetActive(true);
             ui.Dropdown = dropdown;
             return ui;
+        }
+
+        private static BSGDropdown template;
+
+        /// <summary>
+        /// The campaign settings' dropdown: from a settings panel's rule prototype (the lobby's has it at
+        /// once, the singleplayer one not always), else any settings rule's dropdown loaded in the scene.
+        /// </summary>
+        private static BSGDropdown Template()
+        {
+            if (template != null)
+            {
+                return template;
+            }
+            foreach (UICampaignSettings settings in Resources.FindObjectsOfTypeAll<UICampaignSettings>())
+            {
+                GameObject prototype = settings.gameObject.scene.IsValid() ? rulePrototype(settings) : null;
+                template = prototype != null ? prototype.GetComponentInChildren<BSGDropdown>(includeInactive: true) : null;
+                if (template != null)
+                {
+                    return template;
+                }
+            }
+            template = Resources.FindObjectsOfTypeAll<BSGDropdown>().FirstOrDefault(d =>
+                d.gameObject.scene.IsValid() && d.name != "URAH_KingdomDropdown" &&
+                d.GetComponentsInParent<UICampaignSettings.SettingsRule>(true).Length > 0);
+            if (template != null)
+            {
+                Plugin.Log.LogInfo($"Kingdom dropdown: template from {template.transform.parent?.name}/{template.name}");
+            }
+            return template;
         }
 
         /// <summary>Options: the kingdom itself, then every valid profile; the current choice selected.</summary>

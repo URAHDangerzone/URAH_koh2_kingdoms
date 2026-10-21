@@ -82,6 +82,18 @@ namespace URAH_Kingdoms
                 {
                     return;
                 }
+                // labels are found by their text: remove them while the kingdoms still show the old names
+                LabelUpdater labels = LabelUpdater.Get();
+                if (labels != null)
+                {
+                    foreach (Logic.Kingdom kingdom in changed)
+                    {
+                        if (kingdom.visuals is global::Kingdom view && !kingdom.destroyed)
+                        {
+                            labels.ClearKingdomOldLabels(view);
+                        }
+                    }
+                }
                 Assignments.Clear();
                 shown.Clear();
                 foreach (var kv in profiles)
@@ -116,12 +128,7 @@ namespace URAH_Kingdoms
             if (kingdom.visuals is global::Kingdom view)
             {
                 view.Load(kingdom); // colours (ColorPatch) and crest
-                LabelUpdater labels = LabelUpdater.Get();
-                if (labels != null)
-                {
-                    labels.ClearKingdomOldLabels(view);
-                    labels.RecreateKingdomLabel(view);
-                }
+                LabelUpdater.Get()?.RecreateKingdomLabel(view);
             }
             kingdom.NotifyListeners("name_changed"); // kingdom icons in the UI
         }
