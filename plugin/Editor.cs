@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using HarmonyLib;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -10,43 +11,51 @@ namespace URAH_Kingdoms
     using Object = UnityEngine.Object;
 
     /// <summary>
-    /// The profile editor, a main-menu window ("Kingdoms (URAH)" button, MainMenuPatch): the profiles on
-    /// the left (+ New), the selected one's fields on the right. Plain uGUI parts in the game's font (the
-    /// main menu has no window with input fields to copy). TMP input fields: the game ignores its hotkeys
-    /// while one has the focus (UICommon.IsInInput). Saves through the ProfileStore, which validates like
-    /// everywhere else; the arms come from the map's CoA table (CoAMapping), so no map has to be loaded.
+    /// The profile editor, a main-menu window ("Kingdoms (URAH)" button, MainMenu). Made from the game's
+    /// own parts: a copy of the "choose display name" window (frame, caption, its place right of the menu
+    /// buttons), filled with copies of that window's label, input field, buttons and status line, and of
+    /// the campaign settings' dropdown for the arms. The profiles are on the left (+ New), the selected
+    /// one's fields on the right. Opening it closes the other menu windows and the other windows close it
+    /// (TitleUI.CloseAnyOpenMenus), like the game's own. Saves through the ProfileStore, which validates
+    /// like everywhere else; the arms come from the map's CoA table (CoAMapping), so no map is needed.
     /// </summary>
     internal static class Editor
     {
-        private static readonly Color Back = new Color(0.10f, 0.085f, 0.07f, 0.97f);
-        private static readonly Color Field = new Color(0.24f, 0.21f, 0.18f, 1f);
-        private static readonly Color ButtonColor = new Color(0.36f, 0.29f, 0.20f, 1f);
-        private static readonly Color Selected = new Color(0.62f, 0.47f, 0.24f, 1f);
-        private static readonly Color Text = new Color(0.93f, 0.89f, 0.80f, 1f);
-        private static readonly Color Error = new Color(1f, 0.55f, 0.45f, 1f);
+        private static readonly Color Error = new Color(1f, 0.45f, 0.35f, 1f);
 
         private static GameObject root;
+        private static TitleUI title;
+
+        /// <summary>The game's parts, inside the copied window (inactive), copied again for every control.</summary>
+        private sealed class Parts
+        {
+            public RectTransform Window, Body;
+            public TextMeshProUGUI Caption, Label, Status;
+            public TMP_InputField Input;
+            public BSGButton Button, Back;
+        }
 
         private sealed class Form
         {
             public string Id;
-            public TMP_InputField Name, Ian, Anian, Ians, Ruler, Color, Arms;
+            public TMP_InputField Name, Ian, Anian, Ians, Ruler, Color;
+            public BSGDropdown Arms;
+            public readonly List<string> ArmsKeys = new List<string>(); // per option; null = the kingdom's own
             public Image Swatch;
-            public TextMeshProUGUI ArmsName, Status;
+            public TextMeshProUGUI Status;
             public TextMeshProUGUI DeleteLabel;
             public bool DeleteArmed;
-            public List<string> ArmsKeys;
         }
 
-        private static Canvas canvas;
-
-        public static void Open(Canvas on, string id, string status = null)
+        public static void Open(TitleUI on, string id, string status = null)
         {
             Close();
-            canvas = on;
+            title = on;
             try
             {
+                title.CloseAnyOpenMenus(); // closes this one too: built after it
                 Build(id, status);
+                title.m_LogosAndText?.SetActive(false); // the right side is the window's, as with the game's windows
             }
             catch (Exception e)
             {
@@ -61,99 +70,169 @@ namespace URAH_Kingdoms
             {
                 Object.Destroy(root);
                 root = null;
+                title?.m_LogosAndText?.SetActive(true);
             }
         }
 
-        private static TMP_FontAsset font;
+        [HarmonyPatch(typeof(TitleUI), nameof(TitleUI.CloseAnyOpenMenus))]
+        private static class CloseAnyOpenMenusPatch
+        {
+            private static void Prefix() => Close();
+        }
+
+        private static Parts Copy(GameObject source)
+        {
+            root = Object.Instantiate(source, source.transform.parent, worldPositionStays: false);
+            root.name = "URAH_KingdomEditor";
+            foreach (UIChooseDisplayName logic in root.GetComponentsInChildren<UIChooseDisplayName>(includeInactive: true))
+            {
+                Object.DestroyImmediate(logic); // the copy is ours: no display name logic
+            }
+            var parts = new Parts
+            {
+                Window = Find<RectTransform>("RegisterWindow"),
+                Body = Find<RectTransform>("Body"),
+                Caption = Find<TextMeshProUGUI>("id_CaptionLabel"),
+                Label = Find<TextMeshProUGUI>("id_TextField"),
+                Input = Find<TMP_InputField>("id_DisplayNameInput"),
+                Button = Find<BSGButton>("btn_ChooseDisplayName"),
+                Back = Find<BSGButton>("btn_Back"),
+                Status = Find<TextMeshProUGUI>("id_StatusMessage"),
+            };
+            var missing = new List<string>();
+            if (parts.Window == null) missing.Add("window");
+            if (parts.Body == null) missing.Add("body");
+            if (parts.Label == null) missing.Add("label");
+            if (parts.Input == null) missing.Add("input");
+            if (parts.Button == null) missing.Add("button");
+            if (missing.Count > 0)
+            {
+                throw new InvalidOperationException("the display name window has changed, missing: " + string.Join(", ", missing));
+            }
+            // the window's own content becomes templates; the body is laid out anew
+            var templates = new GameObject("Templates", typeof(RectTransform));
+            templates.transform.SetParent(root.transform, worldPositionStays: false);
+            templates.SetActive(false);
+            foreach (Component part in new Component[] { parts.Label, parts.Input, parts.Button, parts.Back, parts.Status })
+            {
+                if (part != null)
+                {
+                    part.transform.SetParent(templates.transform, worldPositionStays: false);
+                }
+            }
+            foreach (Transform child in parts.Body.Cast<Transform>().ToList())
+            {
+                Object.DestroyImmediate(child.gameObject);
+            }
+            return parts;
+
+            T Find<T>(string name) where T : Component =>
+                root.GetComponentsInChildren<T>(includeInactive: true).FirstOrDefault(c => c.name == name);
+        }
 
         private static void Build(string id, string status)
         {
-            if (canvas == null)
+            GameObject source = title.m_ChooseDisplayName;
+            if (source == null)
             {
-                Plugin.Log.LogWarning("Profile editor: no canvas");
-                return;
+                throw new InvalidOperationException("no display name window to copy");
             }
-            font = canvas.GetComponentInChildren<TextMeshProUGUI>(includeInactive: true)?.font ?? TMP_Settings.defaultFontAsset;
+            Parts parts = Copy(source);
 
-            // full-screen blocker: nothing behind the window takes clicks
-            root = new GameObject("URAH_KingdomEditor", typeof(RectTransform), typeof(Image));
-            var rootRt = (RectTransform)root.transform;
-            rootRt.SetParent(canvas.transform, worldPositionStays: false);
-            rootRt.anchorMin = Vector2.zero;
-            rootRt.anchorMax = Vector2.one;
-            rootRt.offsetMin = rootRt.offsetMax = Vector2.zero;
-            root.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.55f);
-            rootRt.SetAsLastSibling();
+            // larger than the display name window, at the same place right of the menu; caption centred on top
+            const float width = 860f, height = 700f;
+            parts.Window.anchorMin = new Vector2(parts.Window.anchorMin.x, 1f);
+            parts.Window.anchorMax = new Vector2(parts.Window.anchorMin.x, 1f);
+            parts.Window.pivot = new Vector2(0f, 1f);
+            parts.Window.sizeDelta = new Vector2(width, height);
+            parts.Window.anchoredPosition = new Vector2(Math.Min(parts.Window.anchoredPosition.x, 1920f - width - 40f), -170f);
+            foreach (RectTransform child in parts.Window.Cast<Transform>().OfType<RectTransform>())
+            {
+                if (child.name == "Background")
+                {
+                    child.anchorMin = Vector2.zero;
+                    child.anchorMax = Vector2.one;
+                    child.pivot = new Vector2(0.5f, 0.5f);
+                    child.offsetMin = child.offsetMax = Vector2.zero;
+                }
+                else if (child.name == "CaptionFrame")
+                {
+                    child.anchorMin = child.anchorMax = new Vector2(0.5f, 1f);
+                    child.anchoredPosition = new Vector2(0f, -38.8f);
+                }
+            }
+            if (parts.Caption != null)
+            {
+                UIText.SetText(parts.Caption, UiTexts.Get("menu"));
+            }
 
-            var window = new GameObject("Window", typeof(RectTransform), typeof(Image), typeof(HorizontalLayoutGroup), typeof(ContentSizeFitter));
-            var wrt = (RectTransform)window.transform;
-            wrt.SetParent(rootRt, worldPositionStays: false);
-            wrt.anchorMin = wrt.anchorMax = wrt.pivot = new Vector2(0.5f, 0.5f);
-            wrt.sizeDelta = new Vector2(940f, 0f);
-            window.GetComponent<Image>().color = Back;
-            var h = window.GetComponent<HorizontalLayoutGroup>();
-            h.padding = new RectOffset(20, 20, 20, 20);
-            h.spacing = 20f;
-            h.childControlWidth = h.childControlHeight = true;
-            h.childForceExpandWidth = false;
-            h.childForceExpandHeight = true;
-            window.GetComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+            // body: below the caption, above the footer
+            RectTransform body = parts.Body;
+            body.anchorMin = Vector2.zero;
+            body.anchorMax = Vector2.one;
+            body.pivot = new Vector2(0.5f, 0.5f);
+            body.offsetMin = new Vector2(40f, 80f);
+            body.offsetMax = new Vector2(-40f, -80f);
+            var columns = body.gameObject.AddComponent<HorizontalLayoutGroup>();
+            columns.spacing = 30f;
+            columns.childControlWidth = columns.childControlHeight = true;
+            columns.childForceExpandWidth = false;
+            columns.childForceExpandHeight = true;
 
             Profile profile = id != null ? Plugin.Profiles.Load(id) : null;
             var form = new Form { Id = profile != null ? id : null };
 
             // left: the profiles
-            RectTransform list = Column(wrt, 260f, 0f);
-            Label(list, UiTexts.Get("profiles"), 22f, FontStyles.Bold);
+            RectTransform list = Column(body, 210f, 0f, 6f);
+            Text(parts, list, UiTexts.Get("profiles"));
             foreach (string pid in Plugin.Profiles.Ids())
             {
                 Profile p = Plugin.Profiles.Load(pid);
-                string text = p != null ? p.Name : pid + " (" + UiTexts.Get("invalid") + ")";
                 string target = pid;
-                TextMeshProUGUI l = Button(list, text, 0f, () => Open(canvas, target), pid == form.Id);
-                l.alignment = TextAlignmentOptions.MidlineLeft;
+                Button(parts, list, p != null ? p.Name : pid + " (" + UiTexts.Get("invalid") + ")", () => Open(title, target), selected: pid == form.Id);
             }
-            Button(list, UiTexts.Get("new"), 0f, () => Open(canvas, null), form.Id == null);
+            Button(parts, list, UiTexts.Get("new"), () => Open(title, null), selected: form.Id == null);
+            Spacer(list);
 
             // right: the fields
-            RectTransform rt = Column(wrt, 0f, 1f);
-            Label(rt, UiTexts.Get(form.Id != null ? "editor_edit" : "editor_new"), 24f, FontStyles.Bold);
-            form.Name = Input(Row(rt, UiTexts.Get("f_name")), Profile.MaxName);
-            form.Ruler = Input(Row(rt, UiTexts.Get("f_ruler")), Profile.MaxName);
-
-            RectTransform colorRow = Row(rt, UiTexts.Get("f_color"));
-            form.Color = Input(colorRow, 7);
-            form.Swatch = Box(colorRow, 40f, Color.white);
+            RectTransform fields = Column(body, 0f, 1f, 4f);
+            form.Name = Field(parts, fields, UiTexts.Get("f_name"), Profile.MaxName);
+            form.Ruler = Field(parts, fields, UiTexts.Get("f_ruler"), Profile.MaxName);
+            RectTransform colorRow = Row(parts, fields, UiTexts.Get("f_color"));
+            form.Color = Input(parts, colorRow, 7);
+            form.Swatch = Swatch(parts, colorRow);
             form.Color.onValueChanged.AddListener(_ => UpdateSwatch(form));
+            RectTransform armsRow = Row(parts, fields, UiTexts.Get("f_arms"));
+            form.Arms = ArmsDropdown(armsRow, form);
+            TextMeshProUGUI hint = Text(parts, fields, UiTexts.Get("adjective_hint"));
+            hint.fontSize = Math.Max(12f, hint.fontSize - 3f);
+            hint.enableWordWrapping = true;
+            form.Ian = Field(parts, fields, UiTexts.Get("f_ian"), Profile.MaxName);
+            form.Anian = Field(parts, fields, UiTexts.Get("f_anian"), Profile.MaxName);
+            form.Ians = Field(parts, fields, UiTexts.Get("f_ians"), Profile.MaxName);
+            RectTransform codeRow = ButtonRow(fields);
+            Button(parts, codeRow, UiTexts.Get("copy_code"), () => CopyCode(form));
+            Button(parts, codeRow, UiTexts.Get("paste_code"), () => PasteCode(form));
+            form.Status = parts.Status != null ? Object.Instantiate(parts.Status, fields, worldPositionStays: false) : Text(parts, fields, "");
+            form.Status.gameObject.SetActive(true);
+            form.Status.gameObject.AddComponent<LayoutElement>().preferredHeight = 40f;
+            form.Status.enableWordWrapping = true;
+            UIText.SetText(form.Status, "");
+            Spacer(fields);
 
-            RectTransform armsRow = Row(rt, UiTexts.Get("f_arms"));
-            form.Arms = Input(armsRow, Profile.MaxKey);
-            Button(armsRow, "<", 40f, () => CycleArms(form, -1));
-            Button(armsRow, ">", 40f, () => CycleArms(form, +1));
-            form.ArmsName = Label(rt, "", 15f, FontStyles.Italic);
-            form.Arms.onValueChanged.AddListener(_ => UpdateArmsName(form));
-
-            Label(rt, UiTexts.Get("adjective_hint"), 15f, FontStyles.Italic);
-            form.Ian = Input(Row(rt, UiTexts.Get("f_ian")), Profile.MaxName);
-            form.Anian = Input(Row(rt, UiTexts.Get("f_anian")), Profile.MaxName);
-            form.Ians = Input(Row(rt, UiTexts.Get("f_ians")), Profile.MaxName);
-
-            RectTransform codeRow = ButtonRow(rt);
-            Button(codeRow, UiTexts.Get("copy_code"), 0f, () => CopyCode(form));
-            Button(codeRow, UiTexts.Get("paste_code"), 0f, () => PasteCode(form));
-
-            form.Status = Label(rt, "", 16f, FontStyles.Normal);
-            form.Status.color = Error;
-
-            RectTransform buttons = ButtonRow(rt);
-            Button(buttons, UiTexts.Get("save"), 0f, () => Save(form));
+            // footer: the window's buttons, at its bottom edge like the game's windows
+            RectTransform footer = Footer(parts.Window);
+            if (parts.Back != null)
+            {
+                BSGButton back = Object.Instantiate(parts.Back, footer, worldPositionStays: false);
+                Wire(back, UiTexts.Get("close"), Close);
+            }
+            Button(parts, footer, UiTexts.Get("save"), () => Save(form));
             if (form.Id != null)
             {
-                form.DeleteLabel = Button(buttons, UiTexts.Get("delete"), 0f, () => Delete(form));
+                form.DeleteLabel = Button(parts, footer, UiTexts.Get("delete"), () => Delete(form));
             }
-            Button(buttons, UiTexts.Get("close"), 0f, Close);
 
-            form.ArmsKeys = ArmsKeys();
             if (profile != null)
             {
                 Fill(form, profile);
@@ -163,11 +242,12 @@ namespace URAH_Kingdoms
                 Status(form, string.Format(UiTexts.Get("invalid_file"), id), error: true); // the log has why
             }
             UpdateSwatch(form);
-            UpdateArmsName(form);
             if (status != null)
             {
                 Status(form, status, error: false);
             }
+            root.SetActive(true);
+            LayoutRebuilder.ForceRebuildLayoutImmediate(parts.Window);
         }
 
         private static void Fill(Form form, Profile p)
@@ -175,7 +255,7 @@ namespace URAH_Kingdoms
             form.Name.text = p.Name ?? "";
             form.Ruler.text = p.Ruler ?? "";
             form.Color.text = p.Color ?? "";
-            form.Arms.text = p.Arms ?? "";
+            SetArms(form, p.Arms);
             form.Ian.text = p.Adjective?.Ian ?? "";
             form.Anian.text = p.Adjective?.Anian ?? "";
             form.Ians.text = p.Adjective?.Ians ?? "";
@@ -184,19 +264,16 @@ namespace URAH_Kingdoms
         /// <summary>The profile in the fields, normalized; null with the errors in the status line.</summary>
         private static Profile Read(Form form)
         {
+            int arms = form.Arms.value;
             var p = new Profile
             {
                 Name = form.Name.text,
                 Ruler = form.Ruler.text,
                 Color = form.Color.text,
-                Arms = form.Arms.text,
+                Arms = arms >= 0 && arms < form.ArmsKeys.Count ? form.ArmsKeys[arms] : null,
                 Adjective = new Adjective { Ian = form.Ian.text, Anian = form.Anian.text, Ians = form.Ians.text },
             };
             var errors = p.Normalize();
-            if (p.Arms != null && form.ArmsKeys.Count > 0 && !form.ArmsKeys.Contains(p.Arms))
-            {
-                errors.Add(string.Format(UiTexts.Get("unknown_arms"), p.Arms));
-            }
             if (errors.Count > 0)
             {
                 Status(form, string.Join("\n", errors), error: true);
@@ -219,7 +296,7 @@ namespace URAH_Kingdoms
                 return;
             }
             Plugin.Log.LogInfo($"Profile '{id}' saved: {p}");
-            Open(canvas, id, UiTexts.Get("saved"));
+            Open(title, id, UiTexts.Get("saved"));
         }
 
         private static void Delete(Form form)
@@ -233,7 +310,7 @@ namespace URAH_Kingdoms
             if (Plugin.Profiles.Delete(form.Id))
             {
                 Plugin.Log.LogInfo($"Profile '{form.Id}' deleted");
-                Open(canvas, null);
+                Open(title, null);
             }
         }
 
@@ -256,22 +333,76 @@ namespace URAH_Kingdoms
                 return;
             }
             Fill(form, p);
-            Status(form, UiTexts.Get("pasted"), error: false);
+            bool armsMissing = p.Arms != null && !form.ArmsKeys.Contains(p.Arms);
+            Status(form, armsMissing ? string.Format(UiTexts.Get("unknown_arms"), p.Arms) : UiTexts.Get("pasted"), error: armsMissing);
         }
+
+        private static Color? statusColor;
 
         private static void Status(Form form, string text, bool error)
         {
-            form.Status.color = error ? Error : Text;
+            if (statusColor == null)
+            {
+                statusColor = form.Status.color;
+            }
+            form.Status.color = error ? Error : statusColor.Value;
             UIText.SetText(form.Status, text);
         }
 
         private static void UpdateSwatch(Form form)
         {
-            bool ok = ColorUtility.TryParseHtmlString(form.Color.text.Trim(), out Color c) && form.Color.text.Trim().Length == 7;
-            form.Swatch.color = ok ? c : new Color(0f, 0f, 0f, 0.3f);
+            string text = form.Color.text.Trim();
+            form.Swatch.color = text.Length == 7 && ColorUtility.TryParseHtmlString(text, out Color c) ? c : new Color(1f, 1f, 1f, 0.25f);
         }
 
-        /// <summary>Keys of the kingdoms with arms in the map's CoA table (without the era variants), sorted.</summary>
+        // ---- arms ----
+
+        /// <summary>The settings' dropdown: "the kingdom's own", then the kingdoms with arms in the map's CoA table, by name.</summary>
+        private static BSGDropdown ArmsDropdown(RectTransform row, Form form)
+        {
+            BSGDropdown template = Selection.Template();
+            if (template == null)
+            {
+                throw new InvalidOperationException("no dropdown to copy");
+            }
+            BSGDropdown dropdown = Object.Instantiate(template, row, worldPositionStays: false);
+            dropdown.name = "URAH_Arms";
+            dropdown.onValueChanged.RemoveAllListeners();
+            dropdown.OnShow = null;
+            dropdown.interactable = true;
+            var le = dropdown.GetComponent<LayoutElement>() ?? dropdown.gameObject.AddComponent<LayoutElement>();
+            le.ignoreLayout = false;
+            le.flexibleWidth = 1f;
+            float h = ((RectTransform)template.transform).rect.height;
+            le.preferredHeight = h > 1f ? h : 29f;
+
+            form.ArmsKeys.Clear();
+            dropdown.options.Clear();
+            form.ArmsKeys.Add(null);
+            dropdown.options.Add(new TMP_Dropdown.OptionData(UiTexts.Get("own_arms")));
+            foreach (var kv in ArmsKeys()
+                .Where(k => Defs.FindTextField("tn_" + k) != null)
+                .Select(k => new KeyValuePair<string, string>(k, Defs.Localize("tn_" + k)))
+                .OrderBy(kv => kv.Value, StringComparer.CurrentCultureIgnoreCase))
+            {
+                form.ArmsKeys.Add(kv.Key);
+                dropdown.options.Add(new TMP_Dropdown.OptionData(kv.Value));
+            }
+            dropdown.template.sizeDelta = new Vector2(0f, 25f * 12f);
+            dropdown.SetValueWithoutNotify(0);
+            dropdown.RefreshShownValue();
+            dropdown.gameObject.SetActive(true);
+            return dropdown;
+        }
+
+        private static void SetArms(Form form, string key)
+        {
+            int index = key != null ? form.ArmsKeys.IndexOf(key) : 0;
+            form.Arms.SetValueWithoutNotify(index < 0 ? 0 : index);
+            form.Arms.RefreshShownValue();
+        }
+
+        /// <summary>Keys of the kingdoms with arms in the map's CoA table (without the era variants).</summary>
         private static List<string> ArmsKeys()
         {
             string map = GameLogic.Get(create: false)?.map_name;
@@ -280,56 +411,18 @@ namespace URAH_Kingdoms
             {
                 return new List<string>();
             }
-            return mapping.mapping.Where(kv => kv.Value > 0 && kv.Key.IndexOf('.') < 0).Select(kv => kv.Key)
-                .OrderBy(k => k, StringComparer.Ordinal).ToList();
+            return mapping.mapping.Where(kv => kv.Value > 0 && kv.Key.IndexOf('.') < 0).Select(kv => kv.Key).ToList();
         }
 
-        private static void CycleArms(Form form, int step)
-        {
-            if (form.ArmsKeys.Count == 0)
-            {
-                return;
-            }
-            int i = form.ArmsKeys.IndexOf(form.Arms.text.Trim());
-            i = i < 0 ? (step > 0 ? 0 : form.ArmsKeys.Count - 1) : (i + step + form.ArmsKeys.Count) % form.ArmsKeys.Count;
-            form.Arms.text = form.ArmsKeys[i];
-        }
+        // ---- building blocks: copies of the window's parts in layout groups ----
 
-        private static void UpdateArmsName(Form form)
-        {
-            string key = form.Arms.text.Trim();
-            string text = "";
-            if (key.Length > 0)
-            {
-                text = form.ArmsKeys.Contains(key) ? string.Format(UiTexts.Get("arms_of"), Defs.Localize("tn_" + key)) : string.Format(UiTexts.Get("unknown_arms"), key);
-            }
-            UIText.SetText(form.ArmsName, text);
-        }
-
-        // ---- building blocks ----
-
-        private static TextMeshProUGUI Label(RectTransform parent, string text, float size, FontStyles style)
-        {
-            var go = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));
-            go.transform.SetParent(parent, worldPositionStays: false);
-            var t = go.GetComponent<TextMeshProUGUI>();
-            t.font = font;
-            t.fontSize = size;
-            t.fontStyle = style;
-            t.color = Text;
-            t.enableWordWrapping = true;
-            t.raycastTarget = false;
-            UIText.SetText(t, text);
-            return t;
-        }
-
-        private static RectTransform Column(RectTransform parent, float width, float flexible)
+        private static RectTransform Column(RectTransform parent, float width, float flexible, float spacing)
         {
             var go = new GameObject("Column", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(LayoutElement));
             var rt = (RectTransform)go.transform;
             rt.SetParent(parent, worldPositionStays: false);
             var v = go.GetComponent<VerticalLayoutGroup>();
-            v.spacing = 8f;
+            v.spacing = spacing;
             v.childControlWidth = v.childControlHeight = true;
             v.childForceExpandWidth = true;
             v.childForceExpandHeight = false;
@@ -342,21 +435,88 @@ namespace URAH_Kingdoms
             return rt;
         }
 
-        /// <summary>A row with a label in front; the controls added to it share the rest of the width.</summary>
-        private static RectTransform Row(RectTransform parent, string label)
+        private static void Spacer(RectTransform column)
+        {
+            var go = new GameObject("Spacer", typeof(RectTransform), typeof(LayoutElement));
+            go.transform.SetParent(column, worldPositionStays: false);
+            go.GetComponent<LayoutElement>().flexibleHeight = 1f;
+        }
+
+        private static TextMeshProUGUI Text(Parts parts, RectTransform parent, string text)
+        {
+            TextMeshProUGUI t = Object.Instantiate(parts.Label, parent, worldPositionStays: false);
+            t.name = "Label";
+            t.raycastTarget = false;
+            t.enableWordWrapping = false;
+            UIText.SetText(t, text);
+            t.gameObject.SetActive(true);
+            return t;
+        }
+
+        /// <summary>A row: the window's label in front, the controls added to it share the rest.</summary>
+        private static RectTransform Row(Parts parts, RectTransform parent, string label)
         {
             var go = new GameObject("Row", typeof(RectTransform), typeof(HorizontalLayoutGroup), typeof(LayoutElement));
             var rt = (RectTransform)go.transform;
             rt.SetParent(parent, worldPositionStays: false);
             var h = go.GetComponent<HorizontalLayoutGroup>();
-            h.spacing = 8f;
+            h.spacing = 10f;
+            h.childAlignment = TextAnchor.MiddleLeft;
             h.childControlWidth = h.childControlHeight = true;
             h.childForceExpandWidth = h.childForceExpandHeight = false;
-            go.GetComponent<LayoutElement>().preferredHeight = 36f;
-            TextMeshProUGUI l = Label(rt, label, 18f, FontStyles.Normal);
+            go.GetComponent<LayoutElement>().preferredHeight = 46f;
+            TextMeshProUGUI l = Text(parts, rt, label);
             l.alignment = TextAlignmentOptions.MidlineLeft;
-            l.gameObject.AddComponent<LayoutElement>().preferredWidth = 190f;
+            var le = l.gameObject.AddComponent<LayoutElement>();
+            le.preferredWidth = 190f;
+            le.preferredHeight = 46f;
             return rt;
+        }
+
+        private static TMP_InputField Field(Parts parts, RectTransform parent, string label, int limit)
+        {
+            return Input(parts, Row(parts, parent, label), limit);
+        }
+
+        private static TMP_InputField Input(Parts parts, RectTransform row, int limit)
+        {
+            TMP_InputField input = Object.Instantiate(parts.Input, row, worldPositionStays: false);
+            input.name = "Input";
+            input.onValueChanged.RemoveAllListeners();
+            input.onEndEdit.RemoveAllListeners();
+            input.onSubmit.RemoveAllListeners();
+            input.contentType = TMP_InputField.ContentType.Standard;
+            input.lineType = TMP_InputField.LineType.SingleLine;
+            input.characterLimit = limit;
+            input.text = "";
+            if (input.placeholder is TMP_Text placeholder)
+            {
+                placeholder.text = "";
+            }
+            var le = input.gameObject.AddComponent<LayoutElement>();
+            le.flexibleWidth = 1f;
+            le.preferredHeight = 44f;
+            input.gameObject.SetActive(true);
+            return input;
+        }
+
+        /// <summary>The colour preview: the input's frame, tinted.</summary>
+        private static Image Swatch(Parts parts, RectTransform row)
+        {
+            var go = new GameObject("Swatch", typeof(RectTransform), typeof(Image), typeof(LayoutElement));
+            go.transform.SetParent(row, worldPositionStays: false);
+            var img = go.GetComponent<Image>();
+            Image frame = parts.Input.GetComponent<Image>();
+            if (frame != null)
+            {
+                img.sprite = frame.sprite;
+                img.type = frame.type;
+            }
+            img.raycastTarget = false;
+            var le = go.GetComponent<LayoutElement>();
+            le.preferredWidth = 60f;
+            le.preferredHeight = 44f;
+            return img;
         }
 
         private static RectTransform ButtonRow(RectTransform parent)
@@ -365,65 +525,49 @@ namespace URAH_Kingdoms
             var rt = (RectTransform)go.transform;
             rt.SetParent(parent, worldPositionStays: false);
             var h = go.GetComponent<HorizontalLayoutGroup>();
-            h.spacing = 10f;
+            h.spacing = 12f;
+            h.childAlignment = TextAnchor.MiddleCenter;
             h.childControlWidth = h.childControlHeight = true;
-            h.childForceExpandWidth = true;
-            h.childForceExpandHeight = false;
-            go.GetComponent<LayoutElement>().preferredHeight = 40f;
+            h.childForceExpandWidth = h.childForceExpandHeight = false;
+            go.GetComponent<LayoutElement>().preferredHeight = 46f;
             return rt;
         }
 
-        private static TMP_InputField Input(RectTransform row, int limit)
+        /// <summary>The footer row at the window's bottom edge, where the game's windows have their buttons.</summary>
+        private static RectTransform Footer(RectTransform window)
         {
-            GameObject go = TMP_DefaultControls.CreateInputField(new TMP_DefaultControls.Resources());
-            go.transform.SetParent(row, worldPositionStays: false);
-            var input = go.GetComponent<TMP_InputField>();
-            input.fontAsset = font;
-            input.pointSize = 18f;
-            input.characterLimit = limit;
-            input.lineType = TMP_InputField.LineType.SingleLine;
-            input.textComponent.color = Text;
-            if (input.placeholder is TMP_Text placeholder)
-            {
-                placeholder.text = "";
-            }
-            go.GetComponent<Image>().color = Field;
-            var le = go.AddComponent<LayoutElement>();
-            le.flexibleWidth = 1f;
-            le.preferredHeight = 36f;
-            return input;
+            var go = new GameObject("Footer", typeof(RectTransform), typeof(HorizontalLayoutGroup));
+            var rt = (RectTransform)go.transform;
+            rt.SetParent(window, worldPositionStays: false);
+            rt.anchorMin = new Vector2(0f, 0f);
+            rt.anchorMax = new Vector2(1f, 0f);
+            rt.pivot = new Vector2(0.5f, 0f);
+            rt.anchoredPosition = new Vector2(0f, 22f);
+            rt.sizeDelta = new Vector2(-80f, 40f);
+            var h = go.GetComponent<HorizontalLayoutGroup>();
+            h.spacing = 16f;
+            h.childAlignment = TextAnchor.MiddleCenter;
+            h.childControlWidth = h.childControlHeight = true;
+            h.childForceExpandWidth = h.childForceExpandHeight = false;
+            return rt;
         }
 
-        private static Image Box(RectTransform row, float width, Color color)
+        /// <summary>A copy of the window's button (196 x 38), as in the game; selected: shown pressed.</summary>
+        private static TextMeshProUGUI Button(Parts parts, RectTransform parent, string text, Action onClick, bool selected = false)
         {
-            var go = new GameObject("Swatch", typeof(RectTransform), typeof(Image), typeof(LayoutElement));
-            go.transform.SetParent(row, worldPositionStays: false);
-            var le = go.GetComponent<LayoutElement>();
-            le.preferredWidth = width;
-            le.preferredHeight = 36f;
-            var img = go.GetComponent<Image>();
-            img.color = color;
-            img.raycastTarget = false;
-            return img;
+            BSGButton button = Object.Instantiate(parts.Button, parent, worldPositionStays: false);
+            TextMeshProUGUI label = Wire(button, text, onClick);
+            if (selected)
+            {
+                button.SetSelected(true, force_update: true);
+            }
+            return label;
         }
 
-        /// <summary>A plain button; width 0: shares the row.</summary>
-        private static TextMeshProUGUI Button(RectTransform row, string text, float width, Action onClick, bool selected = false)
+        private static TextMeshProUGUI Wire(BSGButton button, string text, Action onClick)
         {
-            var go = new GameObject("Button", typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
-            go.transform.SetParent(row, worldPositionStays: false);
-            go.GetComponent<Image>().color = selected ? Selected : ButtonColor;
-            var le = go.GetComponent<LayoutElement>();
-            le.preferredHeight = 36f;
-            if (width > 0f)
-            {
-                le.preferredWidth = width;
-            }
-            else
-            {
-                le.flexibleWidth = 1f;
-            }
-            go.GetComponent<Button>().onClick.AddListener(() =>
+            button.name = "Button";
+            button.onClick = b =>
             {
                 try
                 {
@@ -433,14 +577,23 @@ namespace URAH_Kingdoms
                 {
                     Plugin.Log.LogError($"Profile editor: {e}");
                 }
-            });
-            TextMeshProUGUI label = Label((RectTransform)go.transform, text, 18f, FontStyles.Normal);
-            label.alignment = TextAlignmentOptions.Center;
-            var lrt = (RectTransform)label.transform;
-            lrt.anchorMin = Vector2.zero;
-            lrt.anchorMax = Vector2.one;
-            lrt.offsetMin = new Vector2(10f, 0f);
-            lrt.offsetMax = new Vector2(-10f, 0f);
+            };
+            button.Enable(true);
+            var rt = (RectTransform)button.transform;
+            var le = button.GetComponent<LayoutElement>() ?? button.gameObject.AddComponent<LayoutElement>();
+            le.ignoreLayout = false;
+            le.preferredWidth = rt.rect.width > 1f ? rt.rect.width : 196f;
+            le.preferredHeight = rt.rect.height > 1f ? rt.rect.height : 38f;
+            TextMeshProUGUI label = button.GetComponentInChildren<TextMeshProUGUI>(includeInactive: true);
+            if (label != null)
+            {
+                UIText.SetText(label, text);
+                label.enableAutoSizing = true;
+                label.fontSizeMin = 10f;
+                label.fontSizeMax = Math.Max(label.fontSize, 16f);
+                label.overflowMode = TextOverflowModes.Ellipsis;
+            }
+            button.gameObject.SetActive(true);
             return label;
         }
     }

@@ -152,7 +152,7 @@ namespace URAH_Kingdoms
         /// The campaign settings' dropdown: from a settings panel's rule prototype (the lobby's has it at
         /// once, the singleplayer one not always), else any settings rule's dropdown loaded in the scene.
         /// </summary>
-        private static BSGDropdown Template()
+        internal static BSGDropdown Template()
         {
             if (template != null)
             {

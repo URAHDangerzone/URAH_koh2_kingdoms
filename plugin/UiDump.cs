@@ -20,6 +20,8 @@ namespace URAH_Kingdoms
             Plugin.Log.LogInfo(sb.ToString());
         }
 
+        private static string Short(string s) => s == null ? "" : (s.Length > 30 ? s.Substring(0, 30) + "..." : s).Replace("\n", " ");
+
         private static void Append(StringBuilder sb, Transform t, int level, int depth)
         {
             var rt = t as RectTransform;
@@ -44,7 +46,13 @@ namespace URAH_Kingdoms
                     case CanvasGroup cg:
                         sb.Append($" [CanvasGroup interactable={cg.interactable} raycasts={cg.blocksRaycasts} alpha={cg.alpha}]");
                         break;
-                    case Graphic gr when gr.raycastTarget:
+                    case TMPro.TMP_Text text:
+                        sb.Append($" [{c.GetType().Name} '{Short(text.text)}' {text.fontSize}pt{(text.raycastTarget ? " raycast" : "")}]");
+                        break;
+                    case Image img:
+                        sb.Append($" [Image {(img.sprite != null ? img.sprite.name : "-")} {img.type} color {img.color}{(img.raycastTarget ? " raycast" : "")}]");
+                        break;
+                    case Graphic gr when gr.raycastTarget && !(gr is Image) && !(gr is TMPro.TMP_Text):
                         sb.Append($" [{gr.GetType().Name} raycast]");
                         break;
                     case ContentSizeFitter _:
