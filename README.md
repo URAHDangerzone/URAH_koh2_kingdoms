@@ -12,8 +12,32 @@ no game data, only `Defs/URAH_Kingdoms.def` with the plugin version: without a d
 treats the mod as texts-only and leaves it out of the multiplayer mod check, and the version changes
 the mod checksum with every release. The plugin only patches the game while the mod is active.
 
-Profiles are kept outside the mod in `BepInEx/config/urah.kingdoms/`, so they are not part of the mod
-checksum.
+## Profiles
+
+A profile is a JSON file in `BepInEx/config/urah.kingdoms/` (outside the mod, so not part of the mod
+checksum); its file name without `.json` is its id (`a-z`, `0-9`, `_`, `-`). The profile to play is
+`[General] Profile` in `BepInEx/config/urah.koh2.kingdoms.cfg`; empty plays the picked kingdom as it is.
+
+```json
+{
+  "format": 1,
+  "name": "Ostmark",
+  "adjective": { "ian": "Ostmarkian", "anian": "Ostmarkian", "ians": "Ostmarkians" },
+  "color": "#A0B0C0",
+  "arms": "Hungary",
+  "ruler": "Otto"
+}
+```
+
+- `name` (required) and `ruler`: up to 32 characters, shown as typed in every language
+- `adjective` (optional): the English adjective forms; a missing one falls back to the game's default
+- `color`: map colour, `#RRGGBB`
+- `arms`: key of an existing kingdom (`kingdoms.csv`) whose coat of arms to show
+- No text may contain `{ } [ ] | ; " # @ \`: the game reads them as text markup. Unknown fields are
+  an error, so a typo doesn't go unnoticed; an empty field keeps the replaced kingdom's value.
+
+A **kingdom code** is the same profile as one line (`URAHK1:` + base64 of the JSON, under 1 KB), for
+sharing and for sending in multiplayer.
 
 ## Building
 

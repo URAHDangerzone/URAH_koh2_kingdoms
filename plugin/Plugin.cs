@@ -1,4 +1,6 @@
+using System.IO;
 using BepInEx;
+using BepInEx.Configuration;
 using BepInEx.Logging;
 using URAH;
 
@@ -17,14 +19,28 @@ namespace URAH_Kingdoms
         public const string Version = URAH.BuildVersion.Value; // plugin/version.txt
 
         internal static ManualLogSource Log;
+        internal static ProfileStore Profiles;
 
         private ModLink link;
+        private ConfigEntry<string> profileId;
 
         private void Awake()
         {
             Log = Logger;
+            Profiles = new ProfileStore(Path.Combine(Paths.ConfigPath, "urah.kingdoms"), Log);
+            profileId = Config.Bind("General", "Profile", "",
+                $"Id of the kingdom profile to play (file name without .json in {Profiles.Folder}); empty: play the picked kingdom as it is");
             link = new ModLink(Guid, typeof(Plugin).Assembly, Log);
             Log.LogInfo($"{Name} {Version} loaded");
+            Profile profile = ActiveProfile();
+            Log.LogInfo(profile != null ? $"Profile '{profileId.Value}': {profile}" : "No kingdom profile chosen");
+        }
+
+        /// <summary>The chosen profile, read fresh from its file; null when none is chosen or it is invalid (logged).</summary>
+        internal Profile ActiveProfile()
+        {
+            string id = profileId.Value.Trim();
+            return id.Length == 0 ? null : Profiles.Load(id);
         }
     }
 }
