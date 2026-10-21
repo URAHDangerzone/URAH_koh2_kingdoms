@@ -24,6 +24,7 @@ namespace URAH_Kingdoms
 
         private ModLink link;
         private ConfigEntry<string> profileId;
+        private ConfigEntry<bool> allowOthers;
 
         private void Awake()
         {
@@ -32,6 +33,8 @@ namespace URAH_Kingdoms
             Profiles = new ProfileStore(Path.Combine(Paths.ConfigPath, "urah.kingdoms"), Log);
             profileId = Config.Bind("General", "Profile", "",
                 $"Id of the kingdom profile to play (file name without .json in {Profiles.Folder}); empty: play the picked kingdom as it is");
+            allowOthers = Config.Bind("Multiplayer", "AllowOtherProfiles", true,
+                "As host: the other players may play their own profiles (yours always shows)");
             link = new ModLink(Guid, typeof(Plugin).Assembly, Log);
             link.Changed += Lobby.PublishInLobby;
             Log.LogInfo($"{Name} {Version} loaded");
@@ -45,6 +48,8 @@ namespace URAH_Kingdoms
             get => profileId.Value.Trim();
             set => profileId.Value = value ?? "";
         }
+
+        internal bool AllowOthers => allowOthers.Value;
 
         /// <summary>The chosen profile, read fresh from its file; null when none is chosen or it is invalid (logged).</summary>
         internal Profile ActiveProfile()

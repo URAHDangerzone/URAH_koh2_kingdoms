@@ -53,9 +53,13 @@ namespace URAH_Kingdoms
 
             private static void Postfix(Logic.Game __instance, bool new_game)
             {
-                if (!Assignments.Any || __instance.type != "world_view")
+                if (__instance.type != "world_view")
                 {
                     return;
+                }
+                if (new_game && __instance.IsAuthority() && __instance.campaign != null)
+                {
+                    CampaignStore.StoreAll(__instance.campaign);
                 }
                 foreach (var kv in Assignments.All())
                 {

@@ -21,6 +21,8 @@ namespace URAH_Kingdoms
     {
         private static readonly AccessTools.FieldRef<UICampaignKingdomInfo, BSGButton> pickKingdom =
             AccessTools.FieldRefAccess<UICampaignKingdomInfo, BSGButton>("m_PickKingdom");
+        private static readonly AccessTools.FieldRef<UICampaignKingdomInfo, TextMeshProUGUI> pickWarning =
+            AccessTools.FieldRefAccess<UICampaignKingdomInfo, TextMeshProUGUI>("m_PickWarning");
 
         private sealed class Ui
         {
@@ -32,14 +34,22 @@ namespace URAH_Kingdoms
 
         private static readonly ConditionalWeakTable<UICampaignKingdomInfo, Ui> uis = new ConditionalWeakTable<UICampaignKingdomInfo, Ui>();
 
-        /// <summary>Singleplayer, before the start, a kingdom the player may pick.</summary>
+        /// <summary>
+        /// Before the start, a new campaign: singleplayer, a kingdom the player may pick; multiplayer, the
+        /// kingdom the player picked (the game shows "picked by you" there instead of the pick button).
+        /// </summary>
         private static bool Applies(UICampaignKingdomInfo panel)
         {
             Campaign campaign = panel.Campaign;
             Logic.Kingdom kingdom = panel.Kingdom;
-            if (campaign == null || kingdom == null || campaign.IsMultiplayerCampaign() || campaign.state >= Campaign.State.Started)
+            if (campaign == null || kingdom == null || campaign.state >= Campaign.State.Started || campaign.IsFromSave())
             {
                 return false;
+            }
+            if (campaign.IsMultiplayerCampaign())
+            {
+                int own = campaign.GetLocalPlayerIndexInData();
+                return own >= 0 && CampaignUtils.GetKingdomsOwningPlayerIndex(campaign, kingdom) == own;
             }
             string pick = campaign.GetVar("pick_kingdom");
             return pick != "random_kingdom" && pick != "random_province" &&
@@ -80,6 +90,10 @@ namespace URAH_Kingdoms
             }
             ui.Button.gameObject.SetActive(applies);
             CloseList(ui);
+            if (applies && panel.Campaign.IsMultiplayerCampaign())
+            {
+                pickWarning(panel)?.gameObject.SetActive(false); // "picked by you": the button takes its place
+            }
             if (applies)
             {
                 Profile profile = Plugin.Instance.ActiveProfile();
@@ -155,11 +169,12 @@ namespace URAH_Kingdoms
                     choices.Add(new KeyValuePair<string, string>(id, profile.Name));
                 }
             }
-            if (choices.Count == 1)
-            {
-                choices.Add(new KeyValuePair<string, string>(null, UiTexts.Get("no_profiles")));
-            }
             string current = Plugin.Instance.ProfileId;
+            if (Plugin.Instance.ActiveProfile() != null)
+            {
+                choices.Add(new KeyValuePair<string, string>(EditChoice, UiTexts.Get("edit")));
+            }
+            choices.Add(new KeyValuePair<string, string>(NewChoice, UiTexts.Get("new")));
             var size = ((RectTransform)ui.Button.transform).rect.size;
             foreach (var choice in choices)
             {
@@ -167,7 +182,6 @@ namespace URAH_Kingdoms
                 BSGButton entry = Object.Instantiate(ui.Button, ui.List, worldPositionStays: false);
                 entry.name = "URAH_Profile_" + (id ?? "hint");
                 entry.onClick = btn => Choose(panel, ui, id);
-                entry.Enable(id != null);
                 entry.SetSelected(id == current, force_update: true);
                 Tooltip.Get(entry.gameObject).Clear();
                 ((RectTransform)entry.transform).sizeDelta = size;
@@ -187,18 +201,44 @@ namespace URAH_Kingdoms
             ui.List.position = new Vector3((corners[0].x + corners[2].x) / 2f + (ui.List.pivot.x - 0.5f) * (corners[2].x - corners[0].x), corners[1].y, button.position.z);
         }
 
+        private const string NewChoice = "\u0001new", EditChoice = "\u0001edit"; // never a profile id
+
         private static void Choose(UICampaignKingdomInfo panel, Ui ui, string id)
         {
             CloseList(ui);
-            if (id == Plugin.Instance.ProfileId)
+            if (id == NewChoice || id == EditChoice)
+            {
+                string editId = id == EditChoice ? Plugin.Instance.ProfileId : null;
+                Editor.Open(panel, editId, saved => Select(panel, saved, force: true));
+                return;
+            }
+            Select(panel, id, force: false);
+        }
+
+        /// <summary>Makes a profile the chosen one and shows it (map, panel; lobby: tells the others).</summary>
+        public static void Select(UICampaignKingdomInfo panel, string id, bool force)
+        {
+            id = id ?? "";
+            if (id == Plugin.Instance.ProfileId && !force)
             {
                 return;
             }
             Plugin.Instance.ProfileId = id;
             Plugin.Log.LogInfo(id.Length > 0 ? $"Profile '{id}' chosen" : "No profile chosen");
-            Preview.Show(panel.Kingdom);
-            Update(panel);
-            panel.SetKingdom(panel.Campaign, panel.Kingdom, panel.Realm); // name and crest of the panel
+            Campaign campaign = panel.Campaign;
+            if (campaign != null && campaign.IsMultiplayerCampaign())
+            {
+                Lobby.PublishInLobby(true);
+                Preview.Players(campaign);
+            }
+            else
+            {
+                Preview.Single(panel.Kingdom);
+            }
+            if (panel != null && panel.Kingdom != null)
+            {
+                panel.SetKingdom(panel.Campaign, panel.Kingdom, panel.Realm); // name and crest of the panel, and Update
+            }
         }
 
         /// <summary>The kingdom the player selected shows the chosen profile; any other kingdom its own look.</summary>
@@ -211,7 +251,7 @@ namespace URAH_Kingdoms
                 Logic.Kingdom kingdom = __instance.SelectedKingdom;
                 bool eligible = campaign != null && !campaign.IsMultiplayerCampaign() && kingdom != null &&
                     CampaignUtils.IsPlayerEligible(kingdom.game, kingdom);
-                Preview.Show(eligible ? kingdom : null);
+                Preview.Single(eligible ? kingdom : null);
             }
         }
 
@@ -221,78 +261,8 @@ namespace URAH_Kingdoms
         {
             private static void Prefix()
             {
-                Preview.Show(null);
+                Preview.Clear();
             }
-        }
-    }
-
-    /// <summary>
-    /// The chosen profile on the menu map: assigns it to one kingdom of the menu's game and refreshes that
-    /// kingdom's arms, colour and label (and the one that showed it before). A new game clears it in LoadMap.
-    /// </summary>
-    internal static class Preview
-    {
-        private static Logic.Kingdom shown;
-
-        /// <summary>A map is loading: its kingdoms are new objects, the assignments are cleared with them.</summary>
-        public static void Forget() => shown = null;
-
-        public static void Show(Logic.Kingdom kingdom)
-        {
-            try
-            {
-                Profile profile = kingdom != null ? Plugin.Instance.ActiveProfile() : null;
-                Logic.Kingdom before = shown;
-                if (before == null && profile == null)
-                {
-                    return;
-                }
-                Assignments.Clear();
-                shown = null;
-                if (profile != null)
-                {
-                    Assignments.Assign(kingdom.Name, profile);
-                    shown = kingdom;
-                }
-                if (before != null && before != shown)
-                {
-                    Refresh(before);
-                }
-                if (shown != null)
-                {
-                    Refresh(shown);
-                }
-                ViewMode.titleKingdomsView.Apply(force_reapply: true);
-                LabelUpdater.Get()?.UpdateLabels();
-            }
-            catch (Exception e)
-            {
-                Plugin.Log.LogError($"Map preview: {e}");
-            }
-        }
-
-        private static void Refresh(Logic.Kingdom kingdom)
-        {
-            Logic.Game game = kingdom.game;
-            if (game == null || kingdom.destroyed)
-            {
-                return;
-            }
-            var map = new CoAMapping();
-            map.Load(game.map_name);
-            string suffix = string.IsNullOrEmpty(game.map_period) ? null : game.dt.GetString("Periods." + game.map_name + "." + game.map_period);
-            game.LoadKingdomCoAIndicesAndColors(map, kingdom, suffix); // own arms and colours, then ArmsPatch
-            if (kingdom.visuals is global::Kingdom view)
-            {
-                view.Load(kingdom); // colours (ColorPatch) and crest
-                LabelUpdater labels = LabelUpdater.Get();
-                if (labels != null)
-                {
-                    labels.ClearKingdomOldLabels(view);
-                    labels.RecreateKingdomLabel(view);
-                }
-            }
-            kingdom.NotifyListeners("name_changed"); // kingdom icons in the UI
         }
     }
 }

@@ -139,7 +139,26 @@ namespace URAH_Kingdoms
             return id.Length > 0 ? id : "kingdom";
         }
 
-        private string FreeId(string id)
+        /// <summary>Deletes a profile file; false (logged) when that fails.</summary>
+        public bool Delete(string id)
+        {
+            if (!IsId(id))
+            {
+                return false;
+            }
+            try
+            {
+                File.Delete(PathOf(id));
+                return true;
+            }
+            catch (Exception e)
+            {
+                log.LogWarning($"Profile '{id}' not deleted: {e.Message}");
+                return false;
+            }
+        }
+
+        public string FreeId(string id)
         {
             if (!File.Exists(PathOf(id)))
             {
