@@ -39,6 +39,13 @@ namespace URAH_Kingdoms
             Log.LogInfo(profile != null ? $"Profile '{profileId.Value}': {profile}" : "No kingdom profile chosen");
         }
 
+        /// <summary>Id of the chosen profile ("" for none); setting it saves the config.</summary>
+        internal string ProfileId
+        {
+            get => profileId.Value.Trim();
+            set => profileId.Value = value ?? "";
+        }
+
         /// <summary>The chosen profile, read fresh from its file; null when none is chosen or it is invalid (logged).</summary>
         internal Profile ActiveProfile()
         {

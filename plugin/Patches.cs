@@ -28,6 +28,7 @@ namespace URAH_Kingdoms
                     return; // a battle loads its own map in another Game; the campaign's assignments stay
                 }
                 Assignments.Clear();
+                Preview.Forget();
                 if (!new_game || __instance.campaign == null)
                 {
                     return;
