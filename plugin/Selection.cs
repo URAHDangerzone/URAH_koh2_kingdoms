@@ -97,10 +97,8 @@ namespace URAH_Kingdoms
             {
                 return;
             }
-            if (panel.Campaign.IsMultiplayerCampaign())
-            {
-                pickWarning(panel)?.gameObject.SetActive(false); // "picked by you": the dropdown takes its place
-            }
+            // its place: in the lobby "picked by you", in singleplayer an empty text that would take the clicks
+            pickWarning(panel)?.gameObject.SetActive(false);
             Fill(panel, ui);
         }
 
@@ -124,7 +122,14 @@ namespace URAH_Kingdoms
             to.anchorMax = from.anchorMax;
             to.pivot = from.pivot;
             to.anchoredPosition = from.anchoredPosition;
+            // as wide as the button, as high as the settings' dropdowns, centred where the button is
             Vector2 size = from.rect.size.x > 1f ? from.rect.size : from.sizeDelta;
+            float height = ((RectTransform)template.transform).rect.height;
+            if (height > 1f && height < size.y)
+            {
+                to.anchoredPosition += new Vector2(0f, (0.5f - from.pivot.y) * (size.y - height));
+                size.y = height;
+            }
             to.sizeDelta = size;
             LayoutElement own = dropdown.GetComponent<LayoutElement>() ?? dropdown.gameObject.AddComponent<LayoutElement>();
             LayoutElement pickLayout = pick.GetComponent<LayoutElement>();

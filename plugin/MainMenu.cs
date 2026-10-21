@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using HarmonyLib;
 using TMPro;
 using UnityEngine;
@@ -9,8 +8,8 @@ namespace URAH_Kingdoms
     using Object = UnityEngine.Object;
 
     /// <summary>
-    /// The "Kingdoms (URAH)" button in the main menu, a copy of the game's Credits button right after
-    /// Multiplayer; it opens the profile editor. Made in TitleUI.UpdateMainMenuButtons (every frame), since
+    /// The "Kingdoms (URAH)" button in the main menu, a copy of the game's Credits button as
+    /// the column's last button (after Quit); it opens the profile editor. Made in TitleUI.UpdateMainMenuButtons (every frame), since
     /// the patches may only be applied after the title screen started (ModLink); removed when the mod is
     /// switched off.
     /// </summary>
@@ -44,12 +43,11 @@ namespace URAH_Kingdoms
             BSGButton original = title.btnCredits;
             button = Object.Instantiate(original, original.transform.parent, worldPositionStays: false);
             button.name = "URAH_Kingdoms";
-            Transform after = (title.btnMultiplayer != null && title.btnMultiplayer.transform.parent == original.transform.parent ? title.btnMultiplayer : original).transform;
-            button.transform.SetSiblingIndex(after.GetSiblingIndex() + 1);
-            if (original.transform.parent.GetComponent<LayoutGroup>() == null)
-            {
-                Place((RectTransform)button.transform, (RectTransform)after);
-            }
+            // last of the column's buttons (after Quit), then the column is laid out again
+            Transform last = title.btnQuit != null && title.btnQuit.transform.parent == original.transform.parent ? title.btnQuit.transform : original.transform;
+            button.transform.SetSiblingIndex(last.GetSiblingIndex() + 1);
+            var lastRt = (RectTransform)last;
+            ((RectTransform)button.transform).anchoredPosition = lastRt.anchoredPosition - new Vector2(0f, lastRt.rect.height > 1f ? lastRt.rect.height : 46f);
             button.onClick = b => Editor.Open(title.GetComponentInParent<Canvas>()?.rootCanvas ?? title.GetComponentInChildren<Canvas>(), null);
             button.Enable(true);
             button.SetSelected(false, force_update: true);
@@ -61,45 +59,7 @@ namespace URAH_Kingdoms
             }
             Tooltip.Get(button.gameObject).SetText("#" + UiTexts.Get("menu_tip"));
             button.gameObject.SetActive(true);
-        }
-
-        /// <summary>
-        /// The menu column has no layout group: the button goes one step below "after" and every button
-        /// below moves down a step (the step: the gap between "after" and the next button below it).
-        /// </summary>
-        private static void Place(RectTransform rt, RectTransform after)
-        {
-            Transform parent = after.parent;
-            float y = after.anchoredPosition.y;
-            var below = new List<RectTransform>();
-            float step = float.MaxValue;
-            foreach (Transform child in parent)
-            {
-                var c = child as RectTransform;
-                if (c == null || c == rt || c.GetComponent<BSGButton>() == null)
-                {
-                    continue;
-                }
-                float dy = y - c.anchoredPosition.y;
-                if (dy > 0.5f)
-                {
-                    below.Add(c);
-                    step = Mathf.Min(step, dy);
-                }
-            }
-            if (step == float.MaxValue)
-            {
-                step = after.rect.height > 1f ? after.rect.height : 40f;
-            }
-            rt.anchorMin = after.anchorMin;
-            rt.anchorMax = after.anchorMax;
-            rt.pivot = after.pivot;
-            rt.anchoredPosition = new Vector2(after.anchoredPosition.x, y - step);
-            foreach (RectTransform c in below)
-            {
-                c.anchoredPosition -= new Vector2(0f, step);
-            }
-            Plugin.Log.LogInfo($"Main menu button placed below {after.name}, {below.Count} buttons moved down {step:0}");
+            LayoutRebuilder.ForceRebuildLayoutImmediate((RectTransform)original.transform.parent);
         }
 
         /// <summary>The mod was switched off: the button goes (the patches are removed with it).</summary>
