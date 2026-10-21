@@ -10,12 +10,20 @@ namespace URAH_Kingdoms
     /// <summary>
     /// Which kingdom of the campaign being played shows which profile, keyed by the kingdom's Name (its
     /// key in kingdoms.csv, never changed; ActiveName changes with unions). Rebuilt when a map loads.
-    /// Each assigned kingdom gets the text key tn_urah_ck_&lt;slot&gt;; the game's own kingdom name keys
-    /// stay as they are, so realms or lobby entries with the same key keep their names.
+    /// Each assignment gets a new text key tn_urah_ck_&lt;n&gt; (never reused in a session: the texts stay
+    /// loaded between games); the game's own kingdom name keys stay as they are, so realms or lobby
+    /// entries with the same key keep their names.
+    ///
+    /// The applied profile is kept as a kingdom var (VarKey, the kingdom code): the game saves it with
+    /// the kingdom and sends it to the clients, so a save shows the kingdoms it was played with,
+    /// whatever profile is configured now.
     /// </summary>
     internal static class Assignments
     {
         public const string KeyPrefix = "tn_urah_ck_";
+        public const string VarKey = "urah_kingdoms_profile";
+
+        private static int nextKey;
 
         private sealed class Entry
         {
@@ -38,7 +46,37 @@ namespace URAH_Kingdoms
             {
                 color = c;
             }
-            byKingdom[kingdom] = new Entry { Profile = profile, TextKey = KeyPrefix + byKingdom.Count, Color = color };
+            byKingdom[kingdom] = new Entry { Profile = profile, TextKey = KeyPrefix + nextKey++, Color = color };
+        }
+
+        /// <summary>Stores the profile in the kingdom (saved and synced; authority only).</summary>
+        public static void Store(Logic.Kingdom kingdom, Profile profile)
+        {
+            kingdom.SetVar(VarKey, profile.ToCode());
+        }
+
+        /// <summary>Assigns the profiles stored in the game's kingdoms; returns the kingdoms that have one.</summary>
+        public static List<Logic.Kingdom> FromKingdoms(Logic.Game game)
+        {
+            Clear();
+            var found = new List<Logic.Kingdom>();
+            foreach (Logic.Kingdom kingdom in game.kingdoms)
+            {
+                Logic.Value value = kingdom?.set_vars?.Get(VarKey) ?? Logic.Value.Unknown;
+                if (!value.is_string)
+                {
+                    continue;
+                }
+                Profile profile = Profile.FromCode(value.String(), out string error);
+                if (profile == null)
+                {
+                    Plugin.Log.LogWarning($"{kingdom.Name}: stored profile not used, {error}");
+                    continue;
+                }
+                Assign(kingdom.Name, profile);
+                found.Add(kingdom);
+            }
+            return found;
         }
 
         public static Profile Get(string kingdom)

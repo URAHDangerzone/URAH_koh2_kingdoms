@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using HarmonyLib;
 using Logic;
 
@@ -9,6 +10,10 @@ namespace URAH_Kingdoms
     /// their own "tn_" key), arms (CoAIndex, set from CoA.csv on every map load and on union renames, never
     /// saved), map colour (the view kingdom's MapColor) and, in a new game, the first ruler's name
     /// (Character.ChangeName, the game's own rename: synced and saved).
+    ///
+    /// A new game takes the configured profile and stores it in the kingdom; a loaded game takes the
+    /// profiles stored in its kingdoms (the vars come with the objects, after LoadMap, so in
+    /// Game.OnGameStarted) and refreshes arms, colour and labels the way a union rename does.
     /// </summary>
     internal static class Patches
     {
@@ -16,14 +21,14 @@ namespace URAH_Kingdoms
         [HarmonyPatch(typeof(Logic.Game), nameof(Logic.Game.LoadMap))]
         private static class LoadMapPatch
         {
-            private static void Prefix(Logic.Game __instance)
+            private static void Prefix(Logic.Game __instance, bool new_game)
             {
                 if (__instance.type != "world_view")
                 {
                     return; // a battle loads its own map in another Game; the campaign's assignments stay
                 }
                 Assignments.Clear();
-                if (__instance.campaign == null || __instance.campaign.IsMultiplayerCampaign())
+                if (!new_game || __instance.campaign == null || __instance.campaign.IsMultiplayerCampaign())
                 {
                     return;
                 }
@@ -51,7 +56,12 @@ namespace URAH_Kingdoms
                         Plugin.Log.LogWarning($"Kingdom {kv.Key} not on this map");
                         continue;
                     }
-                    if (new_game && kv.Value.Ruler != null && __instance.IsAuthority())
+                    if (!new_game || !__instance.IsAuthority())
+                    {
+                        continue;
+                    }
+                    Assignments.Store(kingdom, kv.Value);
+                    if (kv.Value.Ruler != null)
                     {
                         Logic.Character king = kingdom.GetKing();
                         if (king != null)
@@ -63,6 +73,32 @@ namespace URAH_Kingdoms
                             Plugin.Log.LogWarning($"{kv.Key} has no king to name");
                         }
                     }
+                }
+            }
+        }
+
+        [HarmonyPatch(typeof(Logic.Game), nameof(Logic.Game.OnGameStarted), typeof(string))]
+        private static class GameStartedPatch
+        {
+            private static void Postfix(Logic.Game __instance, string started_from)
+            {
+                if (started_from != "load_game" || __instance.type != "world_view")
+                {
+                    return;
+                }
+                List<Logic.Kingdom> kingdoms = Assignments.FromKingdoms(__instance);
+                if (kingdoms.Count == 0)
+                {
+                    return;
+                }
+                CoAMapping map = new CoAMapping();
+                map.Load(__instance.map_name);
+                string suffix = string.IsNullOrEmpty(__instance.map_period) ? null : __instance.dt.GetString("Periods." + __instance.map_name + "." + __instance.map_period);
+                foreach (Logic.Kingdom kingdom in kingdoms)
+                {
+                    Plugin.Log.LogInfo($"{kingdom.Name} plays as {Assignments.Get(kingdom.Name)} (from the save)");
+                    ArmsPatch.Apply(map, kingdom, suffix);
+                    kingdom.NotifyListeners("name_changed"); // the view kingdom reloads colours, arms and labels
                 }
             }
         }
@@ -86,9 +122,14 @@ namespace URAH_Kingdoms
         }
 
         [HarmonyPatch(typeof(Logic.Game), nameof(Logic.Game.LoadKingdomCoAIndicesAndColors))]
-        private static class ArmsPatch
+        internal static class ArmsPatch
         {
             private static void Postfix(CoAMapping map, Logic.Kingdom k, string suffix)
+            {
+                Apply(map, k, suffix);
+            }
+
+            public static void Apply(CoAMapping map, Logic.Kingdom k, string suffix)
             {
                 string arms = Assignments.Get(k?.Name)?.Arms;
                 if (arms == null)
