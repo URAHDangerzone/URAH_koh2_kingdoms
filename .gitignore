@@ -1,0 +1,5 @@
+plugin/bin/
+plugin/obj/
+
+# signed plugins of a release, never committed
+URAH_Kingdoms/plugins/

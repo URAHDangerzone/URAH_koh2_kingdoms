@@ -1,0 +1,12 @@
+// URAH Kingdoms: a player replaces the look of the kingdom they picked with their own (name, adjective,
+// colour, arms, ruler name). The URAH_Kingdoms plugin does all of it; this file has two jobs:
+// - without a def or map file the game counts the mod as texts-only (Mod.IsTextsOnly) and leaves it out
+//   of the multiplayer mod list (mod_id), so the lobby would not check it at all
+// - the mod checksum only covers defs, maps, texts and Portraits, not plugins/: the plugin version here
+//   changes the checksum with every release, so the lobby keeps everyone on the same release
+// No Logic def type of that name exists, so the game loads nothing from it.
+
+def URAH_Kingdoms
+{
+	version = "0.1.0" // = plugin/version.txt
+}

@@ -1,0 +1,21 @@
+AI disclosure: this mod was made with the help of AI (Claude, by Anthropic).
+
+Play your own kingdom: when a campaign starts, the kingdom you picked takes the name, adjective,
+colour, arms and ruler name you made in the main menu. Purely cosmetic: lands, culture, religion,
+units and everything else stay those of the kingdom you replaced.
+
+Requires BepInEx 5 and the URAH_Loader plugin installed.
+Or you can just install the URAH_Starter package, it ships both:
+(unzip into the game folder, see INSTALL.md inside):
+https://github.com/URAHDangerzone/URAH_koh2_releases/releases
+Without it this mod does nothing.
+
+WARNING: this mod contains program code. Its plugins/ folder holds a DLL (URAH_Kingdoms.dll)
+that runs inside the game with the full rights of your Windows user, like any program you start.
+URAH_Loader only loads it when it carries the URAH release signature, so a file changed by anyone
+else is refused. It is built and signed by GitHub Actions from the public source below; the GitHub
+release lists the SHA-256 of every file.
+
+Source:
+Mod and URAH_Kingdoms plugin: https://github.com/URAHDangerzone/URAH_koh2_kingdoms
+URAH_Loader: https://github.com/URAHDangerzone/URAH_koh2_loader
