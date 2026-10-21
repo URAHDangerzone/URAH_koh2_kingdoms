@@ -2,44 +2,56 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using HarmonyLib;
+using Logic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
 namespace URAH_Kingdoms
 {
+    using Action = System.Action;
+    using Component = UnityEngine.Component;
     using Object = UnityEngine.Object;
 
     /// <summary>
-    /// The profile editor, a main-menu window ("Kingdoms (URAH)" button, MainMenu). Made from the game's
-    /// own parts: a copy of the "choose display name" window (frame, caption, its place right of the menu
-    /// buttons), filled with copies of that window's label, input field, buttons and status line, and of
-    /// the campaign settings' dropdown for the arms. The profiles are on the left (+ New), the selected
-    /// one's fields on the right. Opening it closes the other menu windows and the other windows close it
-    /// (TitleUI.CloseAnyOpenMenus), like the game's own. Saves through the ProfileStore, which validates
-    /// like everywhere else; the arms come from the map's CoA table (CoAMapping), so no map is needed.
+    /// The profile editor, a main-menu window ("Kingdoms (URAH)" button, MainMenu). A copy of the game's
+    /// Settings window (TitleUI.m_Preferences) without its logic: its caption, its close X, its tab list
+    /// on the left with one tab per profile (+ New last, the language tabs hidden), its content list on
+    /// the right with rows from the Settings' own row prefabs (Preferences.def: label, dropdown, button;
+    /// a text field takes the dropdown's place in a dropdown row, a copy of the display name window's
+    /// input), its bottom buttons as Save and Delete with a status line above them. Opening it closes the
+    /// other menu windows and the other windows close it (TitleUI.CloseAnyOpenMenus), like the game's own.
+    /// Saves through the ProfileStore, which validates like everywhere else; the arms come from the map's
+    /// CoA table (CoAMapping), so no map is needed.
     /// </summary>
     internal static class Editor
     {
+        private const string TabType = "urah_kingdom_profile";
+
         private static readonly Color Error = new Color(1f, 0.45f, 0.35f, 1f);
+
+        private static readonly AccessTools.FieldRef<TitleUI, UIPreferences> preferences =
+            AccessTools.FieldRefAccess<TitleUI, UIPreferences>("m_Preferences");
 
         private static GameObject root;
         private static TitleUI title;
 
-        /// <summary>The game's parts, inside the copied window (inactive), copied again for every control.</summary>
+        /// <summary>The copied window's parts, and the templates its rows are made of.</summary>
         private sealed class Parts
         {
-            public RectTransform Window, Body;
-            public TextMeshProUGUI Caption, Label, Status;
+            public DT.Field Def;
+            public RectTransform Tabs, Content;
+            public GameObject TabPrototype, LabelRow, DropdownRow, ButtonRow;
             public TMP_InputField Input;
-            public BSGButton Button, Back;
+            public BSGButton Save, Delete, Close;
+            public TextMeshProUGUI Caption, SaveLabel, DeleteLabel;
         }
 
         private sealed class Form
         {
             public string Id;
             public TMP_InputField Name, Ian, Anian, Ians, Ruler, Color;
-            public BSGDropdown Arms;
+            public TMP_Dropdown Arms;
             public readonly List<string> ArmsKeys = new List<string>(); // per option; null = the kingdom's own
             public Image Swatch;
             public TextMeshProUGUI Status;
@@ -47,6 +59,7 @@ namespace URAH_Kingdoms
             public bool DeleteArmed;
         }
 
+        /// <summary>Opens on the profile id; null: a new one.</summary>
         public static void Open(TitleUI on, string id, string status = null)
         {
             Close();
@@ -55,7 +68,7 @@ namespace URAH_Kingdoms
             {
                 title.CloseAnyOpenMenus(); // closes this one too: built after it
                 Build(id, status);
-                title.m_LogosAndText?.SetActive(false); // the right side is the window's, as with the game's windows
+                title.m_LogosAndText?.SetActive(false); // the window's place, as with the game's windows
             }
             catch (Exception e)
             {
@@ -63,6 +76,9 @@ namespace URAH_Kingdoms
                 Close();
             }
         }
+
+        /// <summary>Opens on the first profile, or on a new one if there is none.</summary>
+        public static void OpenFirst(TitleUI on) => Open(on, Plugin.Profiles.Ids().FirstOrDefault());
 
         public static void Close()
         {
@@ -80,158 +96,168 @@ namespace URAH_Kingdoms
             private static void Prefix() => Close();
         }
 
-        private static Parts Copy(GameObject source)
+        // ---- the window ----
+
+        private static Parts Copy()
         {
-            root = Object.Instantiate(source, source.transform.parent, worldPositionStays: false);
-            root.name = "URAH_KingdomEditor";
-            foreach (UIChooseDisplayName logic in root.GetComponentsInChildren<UIChooseDisplayName>(includeInactive: true))
+            UIPreferences source = preferences(title);
+            if (source == null)
             {
-                Object.DestroyImmediate(logic); // the copy is ours: no display name logic
+                throw new InvalidOperationException("no settings window to copy");
             }
+            // copied inactive: the copy's UIPreferences goes before it would wake up
+            GameObject src = source.gameObject;
+            bool active = src.activeSelf;
+            src.SetActive(false);
+            try
+            {
+                root = Object.Instantiate(src, src.transform.parent, worldPositionStays: false);
+            }
+            finally
+            {
+                src.SetActive(active);
+            }
+            root.name = "URAH_KingdomEditor";
+            root.transform.SetSiblingIndex(src.transform.GetSiblingIndex() + 1);
+            Object.DestroyImmediate(root.GetComponent<UIPreferences>());
+
+            DT.Field def = Defs.GetDefField("Preferences");
             var parts = new Parts
             {
-                Window = Find<RectTransform>("RegisterWindow"),
-                Body = Find<RectTransform>("Body"),
-                Caption = Find<TextMeshProUGUI>("id_CaptionLabel"),
-                Label = Find<TextMeshProUGUI>("id_TextField"),
-                Input = Find<TMP_InputField>("id_DisplayNameInput"),
-                Button = Find<BSGButton>("btn_ChooseDisplayName"),
-                Back = Find<BSGButton>("btn_Back"),
-                Status = Find<TextMeshProUGUI>("id_StatusMessage"),
+                Def = def,
+                Tabs = Find<RectTransform>("id_CategoriesContainer"),
+                Content = Find<RectTransform>("id_CategoryContent"),
+                TabPrototype = Find<Transform>("id_CategoryPrototype")?.gameObject,
+                LabelRow = Defs.GetObj<GameObject>(def, "label"),
+                DropdownRow = Defs.GetObj<GameObject>(def, "dropdown"),
+                ButtonRow = Defs.GetObj<GameObject>(def, "button"),
+                Input = title.m_ChooseDisplayName != null
+                    ? title.m_ChooseDisplayName.GetComponentsInChildren<TMP_InputField>(includeInactive: true).FirstOrDefault(i => i.name == "id_DisplayNameInput")
+                    : null,
+                Save = Find<BSGButton>("id_ApplyChanges"),
+                SaveLabel = Find<TextMeshProUGUI>("id_ApplyChangesLabel"),
+                Delete = Find<BSGButton>("id_RevertDefaults"),
+                DeleteLabel = Find<TextMeshProUGUI>("id_RevertDefaultsLabel"),
+                Close = Find<BSGButton>("id_Button_Close"),
+                Caption = Find<TextMeshProUGUI>("id_Caption"),
             };
             var missing = new List<string>();
-            if (parts.Window == null) missing.Add("window");
-            if (parts.Body == null) missing.Add("body");
-            if (parts.Label == null) missing.Add("label");
-            if (parts.Input == null) missing.Add("input");
-            if (parts.Button == null) missing.Add("button");
+            if (parts.Tabs == null) missing.Add("tab list");
+            if (parts.Content == null) missing.Add("content");
+            if (parts.TabPrototype == null) missing.Add("tab prototype");
+            if (parts.LabelRow == null) missing.Add("label row");
+            if (parts.DropdownRow == null) missing.Add("dropdown row");
+            if (parts.ButtonRow == null) missing.Add("button row");
+            if (parts.Input == null) missing.Add("display name input");
+            if (parts.Save == null) missing.Add("apply button");
             if (missing.Count > 0)
             {
-                throw new InvalidOperationException("the display name window has changed, missing: " + string.Join(", ", missing));
+                throw new InvalidOperationException("the settings window has changed, missing: " + string.Join(", ", missing));
             }
-            // the window's own content becomes templates; the body is laid out anew
-            var templates = new GameObject("Templates", typeof(RectTransform));
-            templates.transform.SetParent(root.transform, worldPositionStays: false);
-            templates.SetActive(false);
-            foreach (Component part in new Component[] { parts.Label, parts.Input, parts.Button, parts.Back, parts.Status })
+
+            // what the game or other plugins (URAH_PluginManager's buttons and status line) put into it
+            foreach (Transform t in root.GetComponentsInChildren<Transform>(includeInactive: true)
+                .Where(t => t != root.transform && t.name.StartsWith("URAH_")).ToList())
             {
-                if (part != null)
+                if (t != null)
                 {
-                    part.transform.SetParent(templates.transform, worldPositionStays: false);
+                    Object.DestroyImmediate(t.gameObject);
                 }
             }
-            foreach (Transform child in parts.Body.Cast<Transform>().ToList())
+            foreach (Transform child in parts.Tabs.Cast<Transform>().ToList())
+            {
+                if (child.gameObject != parts.TabPrototype)
+                {
+                    Object.DestroyImmediate(child.gameObject);
+                }
+            }
+            foreach (UIPreferences.Category c in parts.TabPrototype.GetComponents<UIPreferences.Category>())
+            {
+                Object.DestroyImmediate(c);
+            }
+            parts.TabPrototype.SetActive(false);
+            foreach (Transform child in parts.Content.Cast<Transform>().ToList())
             {
                 Object.DestroyImmediate(child.gameObject);
             }
+            GameObject languages = (Find<Transform>("Group_LanguageCategories") ?? Find<Transform>("id_LanguageCategoriesContainer"))?.gameObject;
+            languages?.SetActive(false);
+            Find<Transform>("id_ApplyChangesPopup")?.gameObject.SetActive(false);
+            Find<BSGButton>("id_OpenWorkshop")?.gameObject.SetActive(false);
             return parts;
 
+            // the outermost of that name: the tab prototype has its own id_CategoriesContainer
             T Find<T>(string name) where T : Component =>
-                root.GetComponentsInChildren<T>(includeInactive: true).FirstOrDefault(c => c.name == name);
+                root.GetComponentsInChildren<T>(includeInactive: true).Where(c => c.name == name).OrderBy(c => Depth(c.transform)).FirstOrDefault();
+        }
+
+        private static int Depth(Transform t)
+        {
+            int depth = 0;
+            for (; t != null && t != root.transform; t = t.parent)
+            {
+                depth++;
+            }
+            return depth;
         }
 
         private static void Build(string id, string status)
         {
-            GameObject source = title.m_ChooseDisplayName;
-            if (source == null)
-            {
-                throw new InvalidOperationException("no display name window to copy");
-            }
-            Parts parts = Copy(source);
-
-            // larger than the display name window, at the same place right of the menu; caption centred on top
-            const float width = 860f, height = 700f;
-            parts.Window.anchorMin = new Vector2(parts.Window.anchorMin.x, 1f);
-            parts.Window.anchorMax = new Vector2(parts.Window.anchorMin.x, 1f);
-            parts.Window.pivot = new Vector2(0f, 1f);
-            parts.Window.sizeDelta = new Vector2(width, height);
-            parts.Window.anchoredPosition = new Vector2(Math.Min(parts.Window.anchoredPosition.x, 1920f - width - 40f), -170f);
-            foreach (RectTransform child in parts.Window.Cast<Transform>().OfType<RectTransform>())
-            {
-                if (child.name == "Background")
-                {
-                    child.anchorMin = Vector2.zero;
-                    child.anchorMax = Vector2.one;
-                    child.pivot = new Vector2(0.5f, 0.5f);
-                    child.offsetMin = child.offsetMax = Vector2.zero;
-                }
-                else if (child.name == "CaptionFrame")
-                {
-                    child.anchorMin = child.anchorMax = new Vector2(0.5f, 1f);
-                    child.anchoredPosition = new Vector2(0f, -38.8f);
-                }
-            }
+            Parts parts = Copy();
             if (parts.Caption != null)
             {
                 UIText.SetText(parts.Caption, UiTexts.Get("menu"));
             }
-
-            // body: below the caption, above the footer
-            RectTransform body = parts.Body;
-            body.anchorMin = Vector2.zero;
-            body.anchorMax = Vector2.one;
-            body.pivot = new Vector2(0.5f, 0.5f);
-            body.offsetMin = new Vector2(40f, 80f);
-            body.offsetMax = new Vector2(-40f, -80f);
-            var columns = body.gameObject.AddComponent<HorizontalLayoutGroup>();
-            columns.spacing = 30f;
-            columns.childControlWidth = columns.childControlHeight = true;
-            columns.childForceExpandWidth = false;
-            columns.childForceExpandHeight = true;
+            if (parts.Close != null)
+            {
+                parts.Close.onClick = b => Close();
+                parts.Close.Enable(true);
+            }
 
             Profile profile = id != null ? Plugin.Profiles.Load(id) : null;
-            var form = new Form { Id = profile != null ? id : null };
+            var form = new Form { Id = id };
 
-            // left: the profiles
-            RectTransform list = Column(body, 210f, 0f, 6f);
-            Text(parts, list, UiTexts.Get("profiles"));
+            // left: the profiles as tabs, + New last
             foreach (string pid in Plugin.Profiles.Ids())
             {
                 Profile p = Plugin.Profiles.Load(pid);
                 string target = pid;
-                Button(parts, list, p != null ? p.Name : pid + " (" + UiTexts.Get("invalid") + ")", () => Open(title, target), selected: pid == form.Id);
+                Tab(parts, pid, p != null ? p.Name : pid + " (" + UiTexts.Get("invalid") + ")", () => Open(title, target), pid == form.Id);
             }
-            Button(parts, list, UiTexts.Get("new"), () => Open(title, null), selected: form.Id == null);
-            Spacer(list);
+            Tab(parts, "urah_new", UiTexts.Get("new"), () => Open(title, null), form.Id == null);
 
-            // right: the fields
-            RectTransform fields = Column(body, 0f, 1f, 4f);
-            form.Name = Field(parts, fields, UiTexts.Get("f_name"), Profile.MaxName);
-            form.Ruler = Field(parts, fields, UiTexts.Get("f_ruler"), Profile.MaxName);
-            RectTransform colorRow = Row(parts, fields, UiTexts.Get("f_color"));
-            form.Color = Input(parts, colorRow, 7);
-            form.Swatch = Swatch(parts, colorRow);
+            // right: the rows
+            Heading(parts, UiTexts.Get("sec_kingdom"));
+            form.Name = TextRow(parts, UiTexts.Get("f_name"), Profile.MaxName);
+            form.Ruler = TextRow(parts, UiTexts.Get("f_ruler"), Profile.MaxName);
+            form.Color = TextRow(parts, UiTexts.Get("f_color"), 7, UiTexts.Get("color_tip"));
+            form.Swatch = Swatch(form.Color);
             form.Color.onValueChanged.AddListener(_ => UpdateSwatch(form));
-            RectTransform armsRow = Row(parts, fields, UiTexts.Get("f_arms"));
-            form.Arms = ArmsDropdown(armsRow, form);
-            TextMeshProUGUI hint = Text(parts, fields, UiTexts.Get("adjective_hint"));
-            hint.fontSize = Math.Max(12f, hint.fontSize - 3f);
-            hint.enableWordWrapping = true;
-            form.Ian = Field(parts, fields, UiTexts.Get("f_ian"), Profile.MaxName);
-            form.Anian = Field(parts, fields, UiTexts.Get("f_anian"), Profile.MaxName);
-            form.Ians = Field(parts, fields, UiTexts.Get("f_ians"), Profile.MaxName);
-            RectTransform codeRow = ButtonRow(fields);
-            Button(parts, codeRow, UiTexts.Get("copy_code"), () => CopyCode(form));
-            Button(parts, codeRow, UiTexts.Get("paste_code"), () => PasteCode(form));
-            form.Status = parts.Status != null ? Object.Instantiate(parts.Status, fields, worldPositionStays: false) : Text(parts, fields, "");
-            form.Status.gameObject.SetActive(true);
-            form.Status.gameObject.AddComponent<LayoutElement>().preferredHeight = 40f;
-            form.Status.enableWordWrapping = true;
-            UIText.SetText(form.Status, "");
-            Spacer(fields);
+            form.Arms = ArmsRow(parts, form);
+            Heading(parts, UiTexts.Get("sec_adjective"), UiTexts.Get("adjective_hint"));
+            form.Ian = TextRow(parts, UiTexts.Get("f_ian"), Profile.MaxName, UiTexts.Get("adjective_hint"));
+            form.Anian = TextRow(parts, UiTexts.Get("f_anian"), Profile.MaxName, UiTexts.Get("adjective_hint"));
+            form.Ians = TextRow(parts, UiTexts.Get("f_ians"), Profile.MaxName, UiTexts.Get("adjective_hint"));
+            Heading(parts, UiTexts.Get("sec_code"), UiTexts.Get("code_tip"));
+            ButtonRow(parts, UiTexts.Get("copy_code"), UiTexts.Get("copy"), () => CopyCode(form));
+            ButtonRow(parts, UiTexts.Get("paste_code"), UiTexts.Get("paste"), () => PasteCode(form));
 
-            // footer: the window's buttons, at its bottom edge like the game's windows
-            RectTransform footer = Footer(parts.Window);
-            if (parts.Back != null)
+            // bottom: Save in Apply Changes' place, Delete in Revert Defaults'
+            Wire(parts.Save, parts.SaveLabel, UiTexts.Get("save"), () => Save(form));
+            if (parts.Delete != null)
             {
-                BSGButton back = Object.Instantiate(parts.Back, footer, worldPositionStays: false);
-                Wire(back, UiTexts.Get("close"), Close);
+                parts.Delete.gameObject.SetActive(form.Id != null);
+                if (form.Id != null)
+                {
+                    Wire(parts.Delete, parts.DeleteLabel, UiTexts.Get("delete"), () => Delete(form));
+                    form.DeleteLabel = parts.DeleteLabel;
+                }
             }
-            Button(parts, footer, UiTexts.Get("save"), () => Save(form));
-            if (form.Id != null)
-            {
-                form.DeleteLabel = Button(parts, footer, UiTexts.Get("delete"), () => Delete(form));
-            }
+
+            root.SetActive(true);
+            Canvas.ForceUpdateCanvases();
+            LayoutRebuilder.ForceRebuildLayoutImmediate((RectTransform)root.transform);
+            form.Status = StatusLine(parts);
 
             if (profile != null)
             {
@@ -246,9 +272,9 @@ namespace URAH_Kingdoms
             {
                 Status(form, status, error: false);
             }
-            root.SetActive(true);
-            LayoutRebuilder.ForceRebuildLayoutImmediate(parts.Window);
         }
+
+        // ---- the profile ----
 
         private static void Fill(Form form, Profile p)
         {
@@ -276,7 +302,7 @@ namespace URAH_Kingdoms
             var errors = p.Normalize();
             if (errors.Count > 0)
             {
-                Status(form, string.Join("\n", errors), error: true);
+                Status(form, string.Join(" ", errors), error: true);
                 return null;
             }
             return p;
@@ -304,13 +330,16 @@ namespace URAH_Kingdoms
             if (!form.DeleteArmed)
             {
                 form.DeleteArmed = true;
-                UIText.SetText(form.DeleteLabel, UiTexts.Get("delete_confirm"));
+                if (form.DeleteLabel != null)
+                {
+                    UIText.SetText(form.DeleteLabel, UiTexts.Get("delete_confirm"));
+                }
                 return;
             }
             if (Plugin.Profiles.Delete(form.Id))
             {
                 Plugin.Log.LogInfo($"Profile '{form.Id}' deleted");
-                Open(title, null);
+                OpenFirst(title);
             }
         }
 
@@ -337,44 +366,40 @@ namespace URAH_Kingdoms
             Status(form, armsMissing ? string.Format(UiTexts.Get("unknown_arms"), p.Arms) : UiTexts.Get("pasted"), error: armsMissing);
         }
 
-        private static Color? statusColor;
-
         private static void Status(Form form, string text, bool error)
         {
-            if (statusColor == null)
+            if (form.Status == null)
             {
-                statusColor = form.Status.color;
+                return;
             }
-            form.Status.color = error ? Error : statusColor.Value;
+            form.Status.color = error ? Error : Defs.GetColor("Preferences", "category_settings.color_label_normal");
             UIText.SetText(form.Status, text);
+            form.Status.gameObject.SetActive(!string.IsNullOrEmpty(text));
         }
 
         private static void UpdateSwatch(Form form)
         {
             string text = form.Color.text.Trim();
-            form.Swatch.color = text.Length == 7 && ColorUtility.TryParseHtmlString(text, out Color c) ? c : new Color(1f, 1f, 1f, 0.25f);
+            form.Swatch.color = text.Length == 7 && ColorUtility.TryParseHtmlString(text, out Color c) ? c : new Color(1f, 1f, 1f, 0.15f);
         }
 
         // ---- arms ----
 
-        /// <summary>The settings' dropdown: "the kingdom's own", then the kingdoms with arms in the map's CoA table, by name.</summary>
-        private static BSGDropdown ArmsDropdown(RectTransform row, Form form)
+        /// <summary>A dropdown row: "the kingdom's own", then the kingdoms with arms in the map's CoA table, by name.</summary>
+        private static TMP_Dropdown ArmsRow(Parts parts, Form form)
         {
-            BSGDropdown template = Selection.Template();
-            if (template == null)
+            GameObject row = Row(parts, parts.DropdownRow, UiTexts.Get("f_arms"));
+            TMP_Dropdown dropdown = Child<TMP_Dropdown>(row, "id_Dropdown");
+            if (dropdown == null)
             {
-                throw new InvalidOperationException("no dropdown to copy");
+                throw new InvalidOperationException("the settings' dropdown row has no id_Dropdown");
             }
-            BSGDropdown dropdown = Object.Instantiate(template, row, worldPositionStays: false);
-            dropdown.name = "URAH_Arms";
             dropdown.onValueChanged.RemoveAllListeners();
-            dropdown.OnShow = null;
             dropdown.interactable = true;
-            var le = dropdown.GetComponent<LayoutElement>() ?? dropdown.gameObject.AddComponent<LayoutElement>();
-            le.ignoreLayout = false;
-            le.flexibleWidth = 1f;
-            float h = ((RectTransform)template.transform).rect.height;
-            le.preferredHeight = h > 1f ? h : 29f;
+            if (dropdown is BSG_TMP_DropDown bsg)
+            {
+                bsg.indexesToHide.Clear();
+            }
 
             form.ArmsKeys.Clear();
             dropdown.options.Clear();
@@ -388,10 +413,12 @@ namespace URAH_Kingdoms
                 form.ArmsKeys.Add(kv.Key);
                 dropdown.options.Add(new TMP_Dropdown.OptionData(kv.Value));
             }
-            dropdown.template.sizeDelta = new Vector2(0f, 25f * 12f);
+            if (dropdown.template != null)
+            {
+                dropdown.template.sizeDelta = new Vector2(dropdown.template.sizeDelta.x, 25f * 12f);
+            }
             dropdown.SetValueWithoutNotify(0);
             dropdown.RefreshShownValue();
-            dropdown.gameObject.SetActive(true);
             return dropdown;
         }
 
@@ -414,74 +441,70 @@ namespace URAH_Kingdoms
             return mapping.mapping.Where(kv => kv.Value > 0 && kv.Key.IndexOf('.') < 0).Select(kv => kv.Key).ToList();
         }
 
-        // ---- building blocks: copies of the window's parts in layout groups ----
+        // ---- building blocks: the settings window's own ----
 
-        private static RectTransform Column(RectTransform parent, float width, float flexible, float spacing)
+        private static void Tab(Parts parts, string key, string text, Action onSelect, bool selected)
         {
-            var go = new GameObject("Column", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(LayoutElement));
-            var rt = (RectTransform)go.transform;
-            rt.SetParent(parent, worldPositionStays: false);
-            var v = go.GetComponent<VerticalLayoutGroup>();
-            v.spacing = spacing;
-            v.childControlWidth = v.childControlHeight = true;
-            v.childForceExpandWidth = true;
-            v.childForceExpandHeight = false;
-            var le = go.GetComponent<LayoutElement>();
-            if (width > 0f)
+            var def = new DT.Field(parts.Def?.dt) { key = key, type = TabType, children = new List<DT.Field>() };
+            var tab = UIPreferences.Category.Create<ProfileTab>(def, parts.TabPrototype, parts.Tabs) as ProfileTab;
+            if (tab == null)
             {
-                le.preferredWidth = width;
+                return;
             }
-            le.flexibleWidth = flexible;
-            return rt;
+            tab.name = "Tab";
+            tab.OnSelect = c => Run(onSelect);
+            tab.Show(text, selected);
         }
 
-        private static void Spacer(RectTransform column)
+        /// <summary>A row of the settings' prefab, without its preference logic, its label set.</summary>
+        private static GameObject Row(Parts parts, GameObject prefab, string label, string tip = null)
         {
-            var go = new GameObject("Spacer", typeof(RectTransform), typeof(LayoutElement));
-            go.transform.SetParent(column, worldPositionStays: false);
-            go.GetComponent<LayoutElement>().flexibleHeight = 1f;
+            GameObject row = Object.Instantiate(prefab, parts.Content, worldPositionStays: false);
+            row.name = "Row";
+            foreach (UIPreferences.Preference p in row.GetComponentsInChildren<UIPreferences.Preference>(includeInactive: true))
+            {
+                Object.DestroyImmediate(p);
+            }
+            Child<Transform>(row, "id_RestartWarning")?.gameObject.SetActive(false);
+            TextMeshProUGUI l = Child<TextMeshProUGUI>(row, "id_Label");
+            if (l != null)
+            {
+                UIText.SetText(l, label);
+                l.raycastTarget = tip != null;
+                if (tip != null)
+                {
+                    Tooltip.Get(l.gameObject).SetText("#" + tip);
+                }
+                else
+                {
+                    Tooltip.Get(l.gameObject).Clear();
+                }
+            }
+            row.SetActive(true);
+            return row;
         }
 
-        private static TextMeshProUGUI Text(Parts parts, RectTransform parent, string text)
-        {
-            TextMeshProUGUI t = Object.Instantiate(parts.Label, parent, worldPositionStays: false);
-            t.name = "Label";
-            t.raycastTarget = false;
-            t.enableWordWrapping = false;
-            UIText.SetText(t, text);
-            t.gameObject.SetActive(true);
-            return t;
-        }
+        private static void Heading(Parts parts, string text, string tip = null) => Row(parts, parts.LabelRow, text, tip);
 
-        /// <summary>A row: the window's label in front, the controls added to it share the rest.</summary>
-        private static RectTransform Row(Parts parts, RectTransform parent, string label)
+        /// <summary>A dropdown row whose dropdown makes way for a text field in its place and size.</summary>
+        private static TMP_InputField TextRow(Parts parts, string label, int limit, string tip = null)
         {
-            var go = new GameObject("Row", typeof(RectTransform), typeof(HorizontalLayoutGroup), typeof(LayoutElement));
-            var rt = (RectTransform)go.transform;
-            rt.SetParent(parent, worldPositionStays: false);
-            var h = go.GetComponent<HorizontalLayoutGroup>();
-            h.spacing = 10f;
-            h.childAlignment = TextAnchor.MiddleLeft;
-            h.childControlWidth = h.childControlHeight = true;
-            h.childForceExpandWidth = h.childForceExpandHeight = false;
-            go.GetComponent<LayoutElement>().preferredHeight = 46f;
-            TextMeshProUGUI l = Text(parts, rt, label);
-            l.alignment = TextAlignmentOptions.MidlineLeft;
-            var le = l.gameObject.AddComponent<LayoutElement>();
-            le.preferredWidth = 190f;
-            le.preferredHeight = 46f;
-            return rt;
-        }
-
-        private static TMP_InputField Field(Parts parts, RectTransform parent, string label, int limit)
-        {
-            return Input(parts, Row(parts, parent, label), limit);
-        }
-
-        private static TMP_InputField Input(Parts parts, RectTransform row, int limit)
-        {
-            TMP_InputField input = Object.Instantiate(parts.Input, row, worldPositionStays: false);
+            GameObject row = Row(parts, parts.DropdownRow, label, tip);
+            TMP_Dropdown dropdown = Child<TMP_Dropdown>(row, "id_Dropdown");
+            if (dropdown == null)
+            {
+                throw new InvalidOperationException("the settings' dropdown row has no id_Dropdown");
+            }
+            TMP_InputField input = Object.Instantiate(parts.Input, dropdown.transform.parent, worldPositionStays: false);
             input.name = "Input";
+            Take((RectTransform)dropdown.transform, (RectTransform)input.transform);
+            if (dropdown.captionText != null && input.textComponent != null)
+            {
+                input.textComponent.enableAutoSizing = false;
+                input.textComponent.fontSize = dropdown.captionText.fontSize;
+            }
+            Object.DestroyImmediate(dropdown.gameObject);
+
             input.onValueChanged.RemoveAllListeners();
             input.onEndEdit.RemoveAllListeners();
             input.onSubmit.RemoveAllListeners();
@@ -493,108 +516,171 @@ namespace URAH_Kingdoms
             {
                 placeholder.text = "";
             }
-            var le = input.gameObject.AddComponent<LayoutElement>();
-            le.flexibleWidth = 1f;
-            le.preferredHeight = 44f;
+            input.interactable = true;
             input.gameObject.SetActive(true);
             return input;
         }
 
-        /// <summary>The colour preview: the input's frame, tinted.</summary>
-        private static Image Swatch(Parts parts, RectTransform row)
+        /// <summary>
+        /// to takes from's place: its rect, its sibling slot, and the size a layout group would give it
+        /// (its layout element overrides the one the copied input brings).
+        /// </summary>
+        private static void Take(RectTransform from, RectTransform to)
+        {
+            to.anchorMin = from.anchorMin;
+            to.anchorMax = from.anchorMax;
+            to.pivot = from.pivot;
+            to.anchoredPosition = from.anchoredPosition;
+            to.sizeDelta = from.sizeDelta;
+            to.localScale = from.localScale;
+            to.SetSiblingIndex(from.GetSiblingIndex());
+            float minW = LayoutUtility.GetMinWidth(from), prefW = LayoutUtility.GetPreferredWidth(from), flexW = LayoutUtility.GetFlexibleWidth(from);
+            float minH = LayoutUtility.GetMinHeight(from), prefH = LayoutUtility.GetPreferredHeight(from), flexH = LayoutUtility.GetFlexibleHeight(from);
+            LayoutElement fromElement = from.GetComponent<LayoutElement>();
+            bool ignore = fromElement != null && fromElement.ignoreLayout;
+            if (to.GetComponent<LayoutElement>() == null)
+            {
+                to.gameObject.AddComponent<LayoutElement>();
+            }
+            foreach (LayoutElement le in to.GetComponents<LayoutElement>())
+            {
+                le.layoutPriority = 99;
+                le.ignoreLayout = ignore;
+                le.minWidth = minW;
+                le.preferredWidth = prefW;
+                le.flexibleWidth = flexW;
+                le.minHeight = minH;
+                le.preferredHeight = prefH;
+                le.flexibleHeight = flexH;
+            }
+        }
+
+        /// <summary>The colour preview: a square at the right end of the colour field.</summary>
+        private static Image Swatch(TMP_InputField input)
         {
             var go = new GameObject("Swatch", typeof(RectTransform), typeof(Image), typeof(LayoutElement));
-            go.transform.SetParent(row, worldPositionStays: false);
+            var rt = (RectTransform)go.transform;
+            rt.SetParent(input.transform, worldPositionStays: false);
+            rt.anchorMin = new Vector2(1f, 0.18f);
+            rt.anchorMax = new Vector2(1f, 0.82f);
+            rt.pivot = new Vector2(1f, 0.5f);
+            rt.sizeDelta = new Vector2(40f, 0f);
+            rt.anchoredPosition = new Vector2(-8f, 0f);
+            go.GetComponent<LayoutElement>().ignoreLayout = true;
             var img = go.GetComponent<Image>();
-            Image frame = parts.Input.GetComponent<Image>();
-            if (frame != null)
-            {
-                img.sprite = frame.sprite;
-                img.type = frame.type;
-            }
             img.raycastTarget = false;
-            var le = go.GetComponent<LayoutElement>();
-            le.preferredWidth = 60f;
-            le.preferredHeight = 44f;
             return img;
         }
 
-        private static RectTransform ButtonRow(RectTransform parent)
+        private static void ButtonRow(Parts parts, string label, string text, Action onClick)
         {
-            var go = new GameObject("Buttons", typeof(RectTransform), typeof(HorizontalLayoutGroup), typeof(LayoutElement));
-            var rt = (RectTransform)go.transform;
-            rt.SetParent(parent, worldPositionStays: false);
-            var h = go.GetComponent<HorizontalLayoutGroup>();
-            h.spacing = 12f;
-            h.childAlignment = TextAnchor.MiddleCenter;
-            h.childControlWidth = h.childControlHeight = true;
-            h.childForceExpandWidth = h.childForceExpandHeight = false;
-            go.GetComponent<LayoutElement>().preferredHeight = 46f;
-            return rt;
-        }
-
-        /// <summary>The footer row at the window's bottom edge, where the game's windows have their buttons.</summary>
-        private static RectTransform Footer(RectTransform window)
-        {
-            var go = new GameObject("Footer", typeof(RectTransform), typeof(HorizontalLayoutGroup));
-            var rt = (RectTransform)go.transform;
-            rt.SetParent(window, worldPositionStays: false);
-            rt.anchorMin = new Vector2(0f, 0f);
-            rt.anchorMax = new Vector2(1f, 0f);
-            rt.pivot = new Vector2(0.5f, 0f);
-            rt.anchoredPosition = new Vector2(0f, 22f);
-            rt.sizeDelta = new Vector2(-80f, 40f);
-            var h = go.GetComponent<HorizontalLayoutGroup>();
-            h.spacing = 16f;
-            h.childAlignment = TextAnchor.MiddleCenter;
-            h.childControlWidth = h.childControlHeight = true;
-            h.childForceExpandWidth = h.childForceExpandHeight = false;
-            return rt;
-        }
-
-        /// <summary>A copy of the window's button (196 x 38), as in the game; selected: shown pressed.</summary>
-        private static TextMeshProUGUI Button(Parts parts, RectTransform parent, string text, Action onClick, bool selected = false)
-        {
-            BSGButton button = Object.Instantiate(parts.Button, parent, worldPositionStays: false);
-            TextMeshProUGUI label = Wire(button, text, onClick);
-            if (selected)
+            GameObject row = Row(parts, parts.ButtonRow, label);
+            BSGButton button = Child<BSGButton>(row, "id_Button");
+            if (button != null)
             {
-                button.SetSelected(true, force_update: true);
+                Wire(button, Child<TextMeshProUGUI>(row, "id_ButtonLabel"), text, onClick);
             }
-            return label;
         }
 
-        private static TextMeshProUGUI Wire(BSGButton button, string text, Action onClick)
+        private static void Wire(BSGButton button, TextMeshProUGUI label, string text, Action onClick)
         {
-            button.name = "Button";
-            button.onClick = b =>
-            {
-                try
-                {
-                    onClick();
-                }
-                catch (Exception e)
-                {
-                    Plugin.Log.LogError($"Profile editor: {e}");
-                }
-            };
+            button.onClick = b => Run(onClick);
             button.Enable(true);
-            var rt = (RectTransform)button.transform;
-            var le = button.GetComponent<LayoutElement>() ?? button.gameObject.AddComponent<LayoutElement>();
-            le.ignoreLayout = false;
-            le.preferredWidth = rt.rect.width > 1f ? rt.rect.width : 196f;
-            le.preferredHeight = rt.rect.height > 1f ? rt.rect.height : 38f;
-            TextMeshProUGUI label = button.GetComponentInChildren<TextMeshProUGUI>(includeInactive: true);
             if (label != null)
             {
                 UIText.SetText(label, text);
-                label.enableAutoSizing = true;
-                label.fontSizeMin = 10f;
-                label.fontSizeMax = Math.Max(label.fontSize, 16f);
-                label.overflowMode = TextOverflowModes.Ellipsis;
             }
             button.gameObject.SetActive(true);
-            return label;
+        }
+
+        private static void Run(Action action)
+        {
+            try
+            {
+                action();
+            }
+            catch (Exception e)
+            {
+                Plugin.Log.LogError($"Profile editor: {e}");
+            }
+        }
+
+        /// <summary>
+        /// The status line: right above the bottom buttons, as wide as the content's scroll view, in the
+        /// buttons' font (as URAH_PluginManager's Plugins tab has it). Fixed, so a message never moves the rows.
+        /// </summary>
+        private static TextMeshProUGUI StatusLine(Parts parts)
+        {
+            ScrollRect scroll = parts.Content.GetComponentInParent<ScrollRect>();
+            Transform parent = parts.Save.transform.parent;
+            var corners = new Vector3[4];
+            ((RectTransform)parts.Save.transform).GetWorldCorners(corners);
+            float buttonTop = corners[1].y, buttonHeight = corners[1].y - corners[0].y;
+            ((RectTransform)(scroll != null ? scroll.transform : parts.Content)).GetWorldCorners(corners);
+            float left = corners[0].x, right = corners[2].x;
+
+            var go = new GameObject("Status", typeof(RectTransform), typeof(TextMeshProUGUI), typeof(LayoutElement));
+            go.GetComponent<LayoutElement>().ignoreLayout = true;
+            var rt = (RectTransform)go.transform;
+            rt.SetParent(parent, worldPositionStays: false);
+            Vector3 scale = parent.lossyScale;
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = Vector2.zero;
+            rt.position = new Vector3(left, buttonTop + buttonHeight * 0.1f, rt.position.z);
+            rt.sizeDelta = new Vector2((right - left) / scale.x, buttonHeight * 0.55f / scale.y);
+
+            var text = go.GetComponent<TextMeshProUGUI>();
+            TextMeshProUGUI style = parts.SaveLabel ?? parts.Save.GetComponentInChildren<TextMeshProUGUI>(includeInactive: true);
+            if (style != null)
+            {
+                text.font = style.font;
+                text.fontSharedMaterial = style.fontSharedMaterial;
+                text.fontSizeMax = style.fontSize * 0.8f;
+            }
+            text.enableAutoSizing = true;
+            text.fontSizeMin = 8f;
+            text.alignment = TextAlignmentOptions.Midline;
+            text.overflowMode = TextOverflowModes.Ellipsis;
+            text.enableWordWrapping = false;
+            text.raycastTarget = false;
+            go.SetActive(false);
+            return text;
+        }
+
+        private static T Child<T>(GameObject go, string name) where T : Component =>
+            go.GetComponentsInChildren<T>(includeInactive: true).FirstOrDefault(c => c.name == name);
+    }
+
+    /// <summary>A tab of the editor: the settings' tab look (category_settings), a profile's name, no sub tabs.</summary>
+    public class ProfileTab : UIPreferences.Category
+    {
+        private string text;
+
+        internal void Show(string name, bool selected)
+        {
+            text = name;
+            Select(selected);
+            Refresh();
+        }
+
+        public override void SetDefField(DT.Field def)
+        {
+            base.SetDefField(def);
+            settings = Defs.GetDefField("Preferences")?.FindChild("category_settings");
+            Refresh();
+        }
+
+        protected override void Refresh()
+        {
+            if (m_CategoryName != null)
+            {
+                UIText.SetText(m_CategoryName, text ?? "");
+            }
+            if (m_CategoriesContainer != null)
+            {
+                m_CategoriesContainer.gameObject.SetActive(false);
+            }
+            Updatehighlight();
         }
     }
 }

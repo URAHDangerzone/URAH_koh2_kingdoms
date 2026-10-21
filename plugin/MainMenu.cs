@@ -48,7 +48,7 @@ namespace URAH_Kingdoms
             button.transform.SetSiblingIndex(last.GetSiblingIndex() + 1);
             var lastRt = (RectTransform)last;
             ((RectTransform)button.transform).anchoredPosition = lastRt.anchoredPosition - new Vector2(0f, lastRt.rect.height > 1f ? lastRt.rect.height : 46f);
-            button.onClick = b => Editor.Open(title, null);
+            button.onClick = b => Editor.OpenFirst(title);
             button.Enable(true);
             button.SetSelected(false, force_update: true);
             TextMeshProUGUI label = Common.FindChildComponent<TextMeshProUGUI>(button.gameObject, "id_Label") ??
