@@ -20,6 +20,7 @@ namespace URAH_Kingdoms
 
         internal static ManualLogSource Log;
         internal static ProfileStore Profiles;
+        internal static Plugin Instance;
 
         private ModLink link;
         private ConfigEntry<string> profileId;
@@ -27,6 +28,7 @@ namespace URAH_Kingdoms
         private void Awake()
         {
             Log = Logger;
+            Instance = this;
             Profiles = new ProfileStore(Path.Combine(Paths.ConfigPath, "urah.kingdoms"), Log);
             profileId = Config.Bind("General", "Profile", "",
                 $"Id of the kingdom profile to play (file name without .json in {Profiles.Folder}); empty: play the picked kingdom as it is");

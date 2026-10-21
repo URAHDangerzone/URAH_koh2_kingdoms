@@ -1,0 +1,127 @@
+using System;
+using HarmonyLib;
+using Logic;
+
+namespace URAH_Kingdoms
+{
+    /// <summary>
+    /// Assigns the profiles when a campaign map loads and applies them: name (both kingdom classes build
+    /// their own "tn_" key), arms (CoAIndex, set from CoA.csv on every map load and on union renames, never
+    /// saved), map colour (the view kingdom's MapColor) and, in a new game, the first ruler's name
+    /// (Character.ChangeName, the game's own rename: synced and saved).
+    /// </summary>
+    internal static class Patches
+    {
+        /// <summary>Singleplayer: the local player's kingdom gets the chosen profile. Multiplayer comes later.</summary>
+        [HarmonyPatch(typeof(Logic.Game), nameof(Logic.Game.LoadMap))]
+        private static class LoadMapPatch
+        {
+            private static void Prefix(Logic.Game __instance)
+            {
+                if (__instance.type != "world_view")
+                {
+                    return; // a battle loads its own map in another Game; the campaign's assignments stay
+                }
+                Assignments.Clear();
+                if (__instance.campaign == null || __instance.campaign.IsMultiplayerCampaign())
+                {
+                    return;
+                }
+                string kingdom = __instance.multiplayer?.playerData?.kingdomName;
+                Profile profile = Plugin.Instance.ActiveProfile();
+                if (profile == null || string.IsNullOrEmpty(kingdom) || kingdom == "random")
+                {
+                    return;
+                }
+                Assignments.Assign(kingdom, profile);
+                Plugin.Log.LogInfo($"{kingdom} plays as {profile}");
+            }
+
+            private static void Postfix(Logic.Game __instance, bool new_game)
+            {
+                if (!Assignments.Any || __instance.type != "world_view")
+                {
+                    return;
+                }
+                foreach (var kv in Assignments.All())
+                {
+                    Logic.Kingdom kingdom = __instance.GetKingdom(kv.Key);
+                    if (kingdom == null)
+                    {
+                        Plugin.Log.LogWarning($"Kingdom {kv.Key} not on this map");
+                        continue;
+                    }
+                    if (new_game && kv.Value.Ruler != null && __instance.IsAuthority())
+                    {
+                        Logic.Character king = kingdom.GetKing();
+                        if (king != null)
+                        {
+                            king.ChangeName(kv.Value.Ruler);
+                        }
+                        else
+                        {
+                            Plugin.Log.LogWarning($"{kv.Key} has no king to name");
+                        }
+                    }
+                }
+            }
+        }
+
+        [HarmonyPatch(typeof(Logic.Kingdom), nameof(Logic.Kingdom.NameKey), MethodType.Getter)]
+        private static class LogicNameKeyPatch
+        {
+            private static void Postfix(Logic.Kingdom __instance, ref string __result)
+            {
+                __result = Assignments.NameKey(__instance.Name) ?? __result;
+            }
+        }
+
+        [HarmonyPatch(typeof(global::Kingdom), nameof(global::Kingdom.GetNameKey))]
+        private static class ViewNameKeyPatch
+        {
+            private static void Postfix(global::Kingdom __instance, ref string __result)
+            {
+                __result = Assignments.NameKey(__instance.Name) ?? __result;
+            }
+        }
+
+        [HarmonyPatch(typeof(Logic.Game), nameof(Logic.Game.LoadKingdomCoAIndicesAndColors))]
+        private static class ArmsPatch
+        {
+            private static void Postfix(CoAMapping map, Logic.Kingdom k, string suffix)
+            {
+                string arms = Assignments.Get(k?.Name)?.Arms;
+                if (arms == null)
+                {
+                    return;
+                }
+                int index = map.Get(arms, suffix);
+                if (index > 0)
+                {
+                    k.CoAIndex = index;
+                }
+                else
+                {
+                    Plugin.Log.LogWarning($"Arms of '{arms}' not found on this map, {k.Name} keeps its own");
+                }
+            }
+        }
+
+        [HarmonyPatch(typeof(global::Kingdom), nameof(global::Kingdom.UpdateColors))]
+        private static class ColorPatch
+        {
+            private static void Postfix(global::Kingdom __instance, Logic.Kingdom logic)
+            {
+                UnityEngine.Color? color = Assignments.ColorOf(logic?.Name);
+                if (color == null)
+                {
+                    return;
+                }
+                __instance.MapColor = color.Value;
+                UnityEngine.Color[] unitColors = WorldMap.Get()?.unit_colors;
+                __instance.unitColorID = global::Kingdom.PickClosestColorID(unitColors, __instance.MapColor);
+                __instance.unitColor = __instance.unitColorID == -1 ? __instance.MapColor : unitColors[__instance.unitColorID];
+            }
+        }
+    }
+}
