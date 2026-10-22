@@ -146,7 +146,15 @@ namespace URAH_Kingdoms
 
             public static void Apply(CoAMapping map, Logic.Kingdom k, string suffix)
             {
-                string arms = Assignments.Get(k?.Name)?.Arms;
+                Profile profile = Assignments.Get(k?.Name);
+                // own arms (edited in the editor): painted into a free atlas tile; else the chosen kingdom's
+                int own = profile?.Coa != null ? CustomArms.Place(k.game?.map_name, profile.Coa) : -1;
+                if (own > 0)
+                {
+                    k.CoAIndex = own;
+                    return;
+                }
+                string arms = profile?.Arms;
                 if (arms == null)
                 {
                     return;

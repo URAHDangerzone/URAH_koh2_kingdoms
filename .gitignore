@@ -3,3 +3,7 @@ plugin/obj/
 
 # signed plugins of a release, never committed
 URAH_Kingdoms/plugins/
+
+# tool output
+tools/out/
+__pycache__/

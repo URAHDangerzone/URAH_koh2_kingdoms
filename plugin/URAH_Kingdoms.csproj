@@ -18,6 +18,13 @@
     <Reference Include="UnityEngine.IMGUIModule" HintPath="$(ManagedDir)/UnityEngine.IMGUIModule.dll" Private="false" />
     <Reference Include="UnityEngine.TextRenderingModule" HintPath="$(ManagedDir)/UnityEngine.TextRenderingModule.dll" Private="false" />
     <Reference Include="Newtonsoft.Json" HintPath="$(ManagedDir)/Newtonsoft.Json.dll" Private="false" />
+    <Reference Include="UnityEngine.ScreenCaptureModule" HintPath="$(ManagedDir)/UnityEngine.ScreenCaptureModule.dll" Private="false" />
+    <Reference Include="UnityEngine.ImageConversionModule" HintPath="$(ManagedDir)/UnityEngine.ImageConversionModule.dll" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- where each charge is cut out of the game's atlases, written by tools/coa_parts.py -->
+    <EmbeddedResource Include="coa_recipes.txt" LogicalName="URAH_Kingdoms.coa_recipes.txt" />
   </ItemGroup>
 
   <Target Name="Deploy" AfterTargets="Build" Condition="'$(Deploy)' == 'true'">

@@ -24,7 +24,7 @@ namespace URAH_Kingdoms
         public const string CodePrefix = "URAHK1:";
         public const int MaxName = 32;
         public const int MaxKey = 64;
-        public const int MaxJson = 700; // the code (base64) stays below 1 KB
+        public const int MaxJson = 1400; // the code (base64) stays below 2 KB
         public const string Forbidden = "{}[]|;\"#@\\";
 
         [JsonProperty("format", Order = 0)]
@@ -45,6 +45,10 @@ namespace URAH_Kingdoms
         /// <summary>Key of an existing kingdom whose arms to show (kingdoms.csv); checked against the map at campaign start.</summary>
         [JsonProperty("arms", Order = 4, NullValueHandling = NullValueHandling.Ignore)]
         public string Arms;
+
+        /// <summary>Own arms (Coa.CoaSpec's text form): a vanilla crest, or layers made in the editor.</summary>
+        [JsonProperty("coa", Order = 6, NullValueHandling = NullValueHandling.Ignore)]
+        public string Coa;
 
         /// <summary>Name of the first ruler.</summary>
         [JsonProperty("ruler", Order = 5, NullValueHandling = NullValueHandling.Ignore)]
@@ -145,6 +149,11 @@ namespace URAH_Kingdoms
             {
                 errors.Add($"arms '{Arms}' is not a kingdom key (letters, digits, _)");
             }
+            Coa = Blank(Coa);
+            if (Coa != null && global::URAH_Kingdoms.Coa.CoaSpec.Parse(Coa, global::URAH_Kingdoms.Coa.CrestDefs.Palette(), out string coaError) == null)
+            {
+                errors.Add($"coa: {coaError}");
+            }
             Ruler = Text(Ruler, "ruler", MaxName, errors);
             if (Encoding.UTF8.GetByteCount(ToJson()) > MaxJson)
             {
@@ -156,7 +165,7 @@ namespace URAH_Kingdoms
         public override string ToString()
         {
             return $"'{Name}'" + (Ruler != null ? $", ruler '{Ruler}'" : "") + (Color != null ? $", color {Color}" : "") +
-                (Arms != null ? $", arms of {Arms}" : "") + (Adjective != null ? $", adjective {Adjective}" : "");
+                (Arms != null ? $", arms of {Arms}" : "") + (Coa != null ? $", coa {Coa}" : "") + (Adjective != null ? $", adjective {Adjective}" : "");
         }
 
         private static string Blank(string s)

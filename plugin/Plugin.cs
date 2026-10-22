@@ -32,6 +32,7 @@ namespace URAH_Kingdoms
             Profiles = new ProfileStore(Path.Combine(Paths.ConfigPath, "urah.kingdoms"), Log);
             allowOthers = Config.Bind("Multiplayer", "AllowOtherProfiles", true,
                 "As host: the other players may play their own profiles (yours always shows)");
+            DevCapture.Bind(Config);
             link = new ModLink(Guid, typeof(Plugin).Assembly, Log);
             link.Changed += Lobby.PublishInLobby;
             link.Changed += active =>

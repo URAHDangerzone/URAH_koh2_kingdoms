@@ -1,0 +1,258 @@
+# URAH_Kingdoms: charges cut from the game's coat of arms atlases, written by tools/coa_parts.py
+# texture<TAB>crest<TAB>mode<TAB>charge index
+Charge_Pattern	436	banner	0
+Charges_ Almohads_Checker	433	flag	0
+Charges_ Boat_No_Head	140	flag	0
+Charges_ Camel	241	flag	0
+Charges_ Champagne_06	7	shield	0
+Charges_ Circle	555	banner	0
+Charges_ Crossed_Keys copy	572	shield	0
+Charges_ Dagger	56	flag	0
+Charges_ Dagger_filled	489	small_shield	0
+Charges_ Dagger_outlined	489	flag	0
+Charges_ Eight_Star	553	banner	0
+Charges_ Flower	304	banner	0
+Charges_ Gate	472	banner	0
+Charges_ Goat	214	banner	0
+Charges_ Hand_outline	190	banner	0
+Charges_ Horseman_With_Spear	351	shield	0
+Charges_ Laurel_Wreath	556	shield	0
+Charges_ Lilly	117	banner	0
+Charges_ Lilly_outline	22	small_shield	0
+Charges_ Lion_Axe_outlined	352	banner	0
+Charges_ M_Symbol	525	shield	0
+Charges_ M_Symbol_clean	158	flag	0
+Charges_ Musilm_Citadel	39	shield	0
+Charges_ Raven_outlined	105	banner	0
+Charges_ SPQR_1	125	flag	0
+Charges_ Star_empty	61	flag	0
+Charges_ Swords	575	flag	0
+Charges_ Symbol	371	flag	0
+Charges_ Tolouse	50	flag	0
+Charges_ Tower_02	265	shield	0
+Charges_ Tower_03	154	banner	0
+Charges_ Tree	491	flag	0
+Charges_ Venice_Lion_outlined	70	shield	0
+Charges_ Wadan_02	457	flag	0
+Charges_ Winged_horse_2	536	banner	0
+Charges_-3lions_crowned_outlined	370	flag	0
+Charges_-Achaia	441	flag	0
+Charges_-Candar	342	flag	0
+Charges_-Cross1	204	banner	0
+Charges_-Denmark	370	shield	0
+Charges_-Germany	442	shield	0
+Charges_-Marinids	529	shield	0
+Charges_-Oman	415	flag	0
+Charges_-Pomerania	210	shield	0
+Charges_-Ryazan	283	flag	0
+Charges_-Trebizond	144	banner	0
+Charges_3 Apples_2	251	flag	0
+Charges_3Lions_2_outline	186	banner	0
+Charges_Aberdeenshire_Tower	393	shield	0
+Charges_Aberdeenshire_Tower_1	393	banner	0
+Charges_Aberdeenshire_Tower_filled	393	small_shield	0
+Charges_Alania	208	flag	0
+Charges_Alania_outlined	511	banner	0
+Charges_Angel	557	banner	0
+Charges_Anslo_Warrior_01	225	shield	0
+Charges_Anslo_Warrior_02	498	shield	0
+Charges_Anslo_Warrior_03	498	flag	0
+Charges_Archer_1	21	flag	0
+Charges_Armenian_lion	454	banner	0
+Charges_Armenian_lion_outlined	419	banner	0
+Charges_Asturia_Cross_02	504	shield	0
+Charges_Asturia_Cross_03	504	banner	0
+Charges_Baranya_1	94	banner	0
+Charges_Barcelona_2	468	flag	0
+Charges_Bear	76	banner	0
+Charges_Bear_2	197	banner	0
+Charges_Bear_on_legs	238	flag	0
+Charges_Bg_lion_01	6	banner	0
+Charges_Bg_lion_crownless	114	shield	0
+Charges_Bird	134	shield	0
+Charges_Bird_02_outlined	373	shield	0
+Charges_Bird_03	374	banner	0
+Charges_Bird_Crow	64	banner	0
+Charges_Bird_Crow_crowned	446	banner	0
+Charges_Bird_Poland	23	banner	0
+Charges_Birdy_outlined	220	banner	0
+Charges_Biscione	549	banner	0
+Charges_Brandenburg_2	385	shield	0
+Charges_Bridge_01	130	flag	0
+Charges_Brittany	439	banner	0
+Charges_Bull's_Head_01	438	shield	0
+Charges_Bull's_Head_01_outlined	510	banner	0
+Charges_Burgos_2	361	flag	0
+Charges_Byzantium_Weird_Crest_1	32	banner	0
+Charges_Byzantium_Weird_Crest_2	243	flag	0
+Charges_Calais_Bishop_02	513	shield	0
+Charges_Castle	49	banner	0
+Charges_Castle_01 (2)	9	shield	0
+Charges_Castle_01_outline	9	banner	0
+Charges_Castle_03	160	flag	0
+Charges_Castle_06	573	flag	0
+Charges_Castle_2	563	flag	0
+Charges_Castle_open_doors	5	banner	0
+Charges_Cathedral_Haburg	102	shield	0
+Charges_Cavalry_2_outlined	448	banner	0
+Charges_Celtic_woman	143	banner	0
+Charges_Chestnut_leaves	98	shield	0
+Charges_Cross_02	520	flag	0
+Charges_Cross_Hungary	10	banner	0
+Charges_Cross_Hungary_outlined	18	banner	0
+Charges_Cross_Type_2	578	flag	0
+Charges_Cross_ornaments_1	206	shield	0
+Charges_Crow	460	shield	0
+Charges_Crown_Sweden_outlined	423	flag	0
+Charges_Crowned_Lions	524	shield	0
+Charges_Crowned_Lions_outlined	524	banner	0
+Charges_Crowned_bird	72	banner	0
+Charges_Dagger_1	262	flag	0
+Charges_Dalmatia_Lion_02	523	shield	2
+Charges_David's_Star	341	banner	0
+Charges_Double Headed Eagle	516	shield	0
+Charges_Double Headed Eagle_Crowned	476	flag	0
+Charges_Dragon	538	flag	0
+Charges_Dragon_01	173	banner	0
+Charges_Dragon_1	581	shield	1
+Charges_Eagle_1_v1	277	shield	0
+Charges_Eagle_crowned_outlined	558	banner	0
+Charges_Eesti	452	shield	0
+Charges_European_Archer	137	banner	0
+Charges_Fish_1	129	shield	0
+Charges_Flanders_1	165	shield	0
+Charges_Franconia_new_division_01	526	flag	0
+Charges_French_Cross_outline	440	shield	0
+Charges_Goblet_1	365	banner	0
+Charges_Godess_Athens_01	505	banner	0
+Charges_Grapes	470	banner	0
+Charges_Grifin_outlined	128	shield	0
+Charges_Half Moon	404	banner	0
+Charges_Harp_3	474	shield	0
+Charges_Head_01	43	shield	0
+Charges_Head_02	44	banner	0
+Charges_Hordaland_Crown_02	139	flag	0
+Charges_Horse_1	88	banner	0
+Charges_Horse_2	174	flag	0
+Charges_Horse_3_outlined	517	flag	0
+Charges_Horseman	465	banner	0
+Charges_Horseman_outlined	350	shield	0
+Charges_Huge_Leaf	366	shield	0
+Charges_Jerusalem_Cross_outlined	40	flag	0
+Charges_Jump_Man_Horse	246	flag	0
+Charges_Jutland_Anchor_02	24	banner	0
+Charges_Key_One_outlined	127	shield	0
+Charges_Kiev_2	147	shield	0
+Charges_Lepard_outlined	401	flag	0
+Charges_Lighthouse	35	banner	0
+Charges_Lillie_1	58	banner	0
+Charges_Lion on 4 paw_outlined	268	flag	0
+Charges_Lion_01	118	shield	0
+Charges_Lion_01_outlined	118	banner	0
+Charges_Lion_Flanders	249	shield	0
+Charges_Lion_Type_Three_Single_outline	281	flag	0
+Charges_Lion_outlined	521	shield	0
+Charges_Loaded_bow	145	banner	0
+Charges_Luxembourg_2	293	shield	0
+Charges_Malopolska_2	239	shield	0
+Charges_Man	359	banner	0
+Charges_Mecklenburg_1	233	shield	0
+Charges_Mermaid	229	banner	0
+Charges_Minaret_1	78	shield	0
+Charges_Munster_Crown_2	177	shield	0
+Charges_Navarra_outline	394	shield	0
+Charges_Oman_outlined	552	shield	0
+Charges_Outline_Lion	388	banner	0
+Charges_Palatinate_key_02	48	banner	0
+Charges_Palm_tree	413	banner	0
+Charges_Pechenegs_Horseshoe_02	453	banner	0
+Charges_Pike_fish	222	shield	0
+Charges_Poppies	151	banner	0
+Charges_Porto_3	250	banner	0
+Charges_Portugal_1	431	flag	0
+Charges_Powys_2	430	shield	0
+Charges_Ragusa_2	258	flag	0
+Charges_Red_Rose	172	shield	0
+Charges_Red_Square_Jalayarids	110	flag	0
+Charges_Riga_1	232	shield	0
+Charges_Rowboat	30	flag	0
+Charges_Rum_1	230	flag	0
+Charges_Rum_2	230	shield	0
+Charges_Running_stag	12	banner	0
+Charges_Saint_G	42	shield	0
+Charges_Scared_Bird	443	shield	0
+Charges_Sheep_1_outlined	528	shield	0
+Charges_Ship	307	flag	0
+Charges_Ship_2	252	shield	0
+Charges_Silesia_Bird_02	19	flag	0
+Charges_Sparrow	119	flag	0
+Charges_Stag	224	banner	0
+Charges_Stagoutlined	451	shield	0
+Charges_Standing Eagle	507	shield	0
+Charges_Standing Eagle_outlined	507	banner	0
+Charges_Sun_Type_1	269	shield	0
+Charges_Sun_Wavy	544	shield	0
+Charges_Swabia	469	shield	0
+Charges_Tamplier_cross	218	shield	0
+Charges_Tamplier_cross_no_triangle	256	shield	0
+Charges_Tower_2	90	banner	0
+Charges_Tree_Kamenec	209	shield	0
+Charges_Tunisia_2	487	banner	0
+Charges_Venice_Winged_Lion_Outlined	272	flag	0
+Charges_Vidin_Lions	428	shield	0
+Charges_Viking_Boat	59	flag	0
+Charges_White_cross	66	shield	0
+Charges_Winged_lion	27	flag	0
+Charges_Yatagan_outlined	36	flag	0
+Charges_Zakarid-Armenia	255	shield	0
+Charges_Zaragoza_2	240	banner	0
+Charges_amfora_liquid	166	flag	0
+Charges_arm_with_flag	100	banner	0
+Charges_bird_fil	178	shield	0
+Charges_bird_fill_outlined	219	shield	0
+Charges_bird_flight	28	shield	0
+Charges_bull	131	flag	0
+Charges_church	123	banner	0
+Charges_church2_outlined	201	banner	0
+Charges_crowness_lion_outline	116	shield	0
+Charges_flower_stroke	108	shield	0
+Charges_gate	167	shield	0
+Charges_gate_no_towers	543	banner	0
+Charges_grape	533	banner	0
+Charges_hands_02	420	shield	0
+Charges_head_Athena	505	shield	0
+Charges_jesus_cross	103	banner	0
+Charges_key	195	shield	0
+Charges_kings_head	170	banner	0
+Charges_letterC	464	flag	0
+Charges_lion_4_paws	159	banner	0
+Charges_lion_head	212	shield	0
+Charges_open_book	327	flag	0
+Charges_pane_tree	447	banner	0
+Charges_panther	515	flag	0
+Charges_porta	2	shield	0
+Charges_powys_lion	508	banner	0
+Charges_priest	136	flag	0
+Charges_sheep_type2	207	flag	0
+Charges_standing_bear	198	banner	0
+Charges_sword	164	banner	0
+Charges_triangle	403	shield	0
+Charges_wolf_head	236	shield	0
+Lozenge (1)_150	492	banner	0
+Mullet of 7 Points_138	416	shield	0
+Roundel (1)_155	551	banner	0
+Sun (2)	185	shield	0
+charges_2lions_outline	73	flag	0
+charges_3lions_outline	426	shield	0
+Charges_ Lilly_01	52	shield	0
+Charges_ Line	276	shield	2
+Charges_ Wallachia	26	shield	0
+Charges_-Ottomans	459	shield	1
+Charges_-Zakarid-Armenia	411	small_shield	1
+Charges_Castle_gate	104	banner	1
+Charges_Crancelin_outlined	386	flag	0
+Charges_Crown_Sweden	213	banner	1
+Charges_Empty_Sun	16	shield	1
+Charges_Flame_1	471	shield	2
+Charges_outlineOfStars	226	shield	1
+Charges_bat	67	flag	0

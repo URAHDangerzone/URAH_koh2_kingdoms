@@ -60,6 +60,7 @@ namespace URAH_Kingdoms
             Tooltip.Get(button.gameObject).SetText("#" + UiTexts.Get("menu_tip"));
             button.gameObject.SetActive(true);
             LayoutRebuilder.ForceRebuildLayoutImmediate((RectTransform)original.transform.parent);
+            DevCapture.MainMenuReady(title);
         }
 
         /// <summary>The mod was switched off: the button goes (the patches are removed with it).</summary>

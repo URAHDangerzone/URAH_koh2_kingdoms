@@ -24,7 +24,7 @@ namespace URAH_Kingdoms
     /// Saves through the ProfileStore, which validates like everywhere else; the arms come from the map's
     /// CoA table (CoAMapping), so no map is needed.
     /// </summary>
-    internal static class Editor
+    internal static partial class Editor
     {
         private const string TabType = "urah_kingdom_profile";
 
@@ -34,6 +34,39 @@ namespace URAH_Kingdoms
             AccessTools.FieldRefAccess<TitleUI, UIPreferences>("m_Preferences");
 
         private static GameObject root;
+        private static Form current; // the open editor's
+
+        /// <summary>DevCapture: opens the arms window, the crest browser or the colour popup over the open editor.</summary>
+        internal static void DevOpen(string what)
+        {
+            if (root == null || current == null)
+            {
+                return;
+            }
+            Run(() =>
+            {
+                if (what == "arms_full" && current.Coa != null && Coa.Parts.Get() is Coa.Parts cp)
+                {
+                    // a few layers to see (only in the form: nothing is saved)
+                    current.Coa.Division = "Division_Per_Fess";
+                    current.Coa.Ordinaries.Add((cp.Catalogue.Ids[Coa.PartKind.Ordinary][0], false, false, current.Coa.Fills[0].Color));
+                    foreach (string preset in new[] { Coa.Presets.Centred, Coa.Presets.Triangle })
+                    {
+                        current.Coa.Charges.Add(new Coa.ChargeSpec { Part = cp.Catalogue.Ids[Coa.PartKind.Charge][5], Color = current.Coa.Fills[0].Color, Preset = preset, Size = 0.3f });
+                    }
+                    current.Coa.Edited = true;
+                }
+                OpenArmsWindow(current);
+                if (what == "browser")
+                {
+                    OpenBrowser(current);
+                }
+                else if (what == "color")
+                {
+                    OpenColorPopup(current.Parts, UiTexts.Get("f_colour"), () => new Color32(180, 33, 34, 255), c => { });
+                }
+            });
+        }
         private static TitleUI title;
 
         /// <summary>The copied window's parts, and the templates its rows are made of.</summary>
@@ -41,7 +74,7 @@ namespace URAH_Kingdoms
         {
             public DT.Field Def;
             public RectTransform Tabs, Content;
-            public GameObject TabPrototype, LabelRow, DropdownRow, ButtonRow;
+            public GameObject TabPrototype, LabelRow, DropdownRow, ButtonRow, SliderRow;
             public TMP_InputField Input;
             public BSGButton Save, Delete, Close;
             public TextMeshProUGUI Caption, SaveLabel, DeleteLabel;
@@ -51,9 +84,16 @@ namespace URAH_Kingdoms
         {
             public string Id;
             public TMP_InputField Name, Ian, Anian, Ians, Ruler, Color;
-            public TMP_Dropdown Arms;
-            public readonly List<string> ArmsKeys = new List<string>(); // per option; null = the kingdom's own
             public Image Swatch;
+            public Parts Parts;
+            public string ArmsKey; // a kingdom whose arms the chosen vanilla crest is (other maps find them by it)
+            public global::URAH_Kingdoms.Coa.CoaSpec Coa; // null: the kingdom's own arms
+            public TextMeshProUGUI ArmsLabel; // the editor's arms row
+            public readonly RawImage[] Previews = new RawImage[3]; // the editor's arms row
+            public readonly RawImage[] WindowPreviews = new RawImage[3]; // the arms window, while open
+            public readonly Texture2D[] PreviewTex = new Texture2D[3]; // shown by both
+            public TextMeshProUGUI WindowBase;
+            public RectTransform Layers; // the arms window's layer list, while open
             public TextMeshProUGUI Status;
             public TextMeshProUGUI DeleteLabel;
             public bool DeleteArmed;
@@ -82,6 +122,7 @@ namespace URAH_Kingdoms
 
         public static void Close()
         {
+            CloseAllPopups();
             if (root != null)
             {
                 Object.Destroy(root);
@@ -131,6 +172,7 @@ namespace URAH_Kingdoms
                 LabelRow = Defs.GetObj<GameObject>(def, "label"),
                 DropdownRow = Defs.GetObj<GameObject>(def, "dropdown"),
                 ButtonRow = Defs.GetObj<GameObject>(def, "button"),
+                SliderRow = Defs.GetObj<GameObject>(def, "slider"),
                 Input = title.m_ChooseDisplayName != null
                     ? title.m_ChooseDisplayName.GetComponentsInChildren<TMP_InputField>(includeInactive: true).FirstOrDefault(i => i.name == "id_DisplayNameInput")
                     : null,
@@ -148,6 +190,7 @@ namespace URAH_Kingdoms
             if (parts.LabelRow == null) missing.Add("label row");
             if (parts.DropdownRow == null) missing.Add("dropdown row");
             if (parts.ButtonRow == null) missing.Add("button row");
+            if (parts.SliderRow == null) missing.Add("slider row");
             if (parts.Input == null) missing.Add("display name input");
             if (parts.Save == null) missing.Add("apply button");
             if (missing.Count > 0)
@@ -216,6 +259,7 @@ namespace URAH_Kingdoms
 
             Profile profile = id != null ? Plugin.Profiles.Load(id) : null;
             var form = new Form { Id = id };
+            current = form;
 
             // left: the profiles as tabs, + New last
             foreach (string pid in Plugin.Profiles.Ids())
@@ -233,11 +277,12 @@ namespace URAH_Kingdoms
             form.Color = TextRow(parts, UiTexts.Get("f_color"), 7, UiTexts.Get("color_tip"));
             form.Swatch = Swatch(form.Color);
             form.Color.onValueChanged.AddListener(_ => UpdateSwatch(form));
-            form.Arms = ArmsRow(parts, form);
+            ColorPicker(parts, form.Color, form.Swatch, UiTexts.Get("f_color"));
             Heading(parts, UiTexts.Get("sec_adjective"), UiTexts.Get("adjective_hint"));
             form.Ian = TextRow(parts, UiTexts.Get("f_ian"), Profile.MaxName, UiTexts.Get("adjective_hint"));
             form.Anian = TextRow(parts, UiTexts.Get("f_anian"), Profile.MaxName, UiTexts.Get("adjective_hint"));
             form.Ians = TextRow(parts, UiTexts.Get("f_ians"), Profile.MaxName, UiTexts.Get("adjective_hint"));
+            ArmsSection(parts, form);
             Heading(parts, UiTexts.Get("sec_code"), UiTexts.Get("code_tip"));
             ButtonRow(parts, UiTexts.Get("copy_code"), UiTexts.Get("copy"), () => CopyCode(form));
             ButtonRow(parts, UiTexts.Get("paste_code"), UiTexts.Get("paste"), () => PasteCode(form));
@@ -268,6 +313,7 @@ namespace URAH_Kingdoms
                 Status(form, string.Format(UiTexts.Get("invalid_file"), id), error: true); // the log has why
             }
             UpdateSwatch(form);
+            RebuildArms(form);
             if (status != null)
             {
                 Status(form, status, error: false);
@@ -281,7 +327,7 @@ namespace URAH_Kingdoms
             form.Name.text = p.Name ?? "";
             form.Ruler.text = p.Ruler ?? "";
             form.Color.text = p.Color ?? "";
-            SetArms(form, p.Arms);
+            SetArms(form, p);
             form.Ian.text = p.Adjective?.Ian ?? "";
             form.Anian.text = p.Adjective?.Anian ?? "";
             form.Ians.text = p.Adjective?.Ians ?? "";
@@ -290,13 +336,13 @@ namespace URAH_Kingdoms
         /// <summary>The profile in the fields, normalized; null with the errors in the status line.</summary>
         private static Profile Read(Form form)
         {
-            int arms = form.Arms.value;
             var p = new Profile
             {
                 Name = form.Name.text,
                 Ruler = form.Ruler.text,
                 Color = form.Color.text,
-                Arms = arms >= 0 && arms < form.ArmsKeys.Count ? form.ArmsKeys[arms] : null,
+                Arms = form.Coa != null ? form.ArmsKey : null,
+                Coa = form.Coa?.ToString(),
                 Adjective = new Adjective { Ian = form.Ian.text, Anian = form.Anian.text, Ians = form.Ians.text },
             };
             var errors = p.Normalize();
@@ -362,8 +408,8 @@ namespace URAH_Kingdoms
                 return;
             }
             Fill(form, p);
-            bool armsMissing = p.Arms != null && !form.ArmsKeys.Contains(p.Arms);
-            Status(form, armsMissing ? string.Format(UiTexts.Get("unknown_arms"), p.Arms) : UiTexts.Get("pasted"), error: armsMissing);
+            RebuildArms(form);
+            Status(form, UiTexts.Get("pasted"), error: false);
         }
 
         private static void Status(Form form, string text, bool error)
@@ -384,50 +430,6 @@ namespace URAH_Kingdoms
         }
 
         // ---- arms ----
-
-        /// <summary>A dropdown row: "the kingdom's own", then the kingdoms with arms in the map's CoA table, by name.</summary>
-        private static TMP_Dropdown ArmsRow(Parts parts, Form form)
-        {
-            GameObject row = Row(parts, parts.DropdownRow, UiTexts.Get("f_arms"));
-            TMP_Dropdown dropdown = Child<TMP_Dropdown>(row, "id_Dropdown");
-            if (dropdown == null)
-            {
-                throw new InvalidOperationException("the settings' dropdown row has no id_Dropdown");
-            }
-            dropdown.onValueChanged.RemoveAllListeners();
-            dropdown.interactable = true;
-            if (dropdown is BSG_TMP_DropDown bsg)
-            {
-                bsg.indexesToHide.Clear();
-            }
-
-            form.ArmsKeys.Clear();
-            dropdown.options.Clear();
-            form.ArmsKeys.Add(null);
-            dropdown.options.Add(new TMP_Dropdown.OptionData(UiTexts.Get("own_arms")));
-            foreach (var kv in ArmsKeys()
-                .Where(k => Defs.FindTextField("tn_" + k) != null)
-                .Select(k => new KeyValuePair<string, string>(k, Defs.Localize("tn_" + k)))
-                .OrderBy(kv => kv.Value, StringComparer.CurrentCultureIgnoreCase))
-            {
-                form.ArmsKeys.Add(kv.Key);
-                dropdown.options.Add(new TMP_Dropdown.OptionData(kv.Value));
-            }
-            if (dropdown.template != null)
-            {
-                dropdown.template.sizeDelta = new Vector2(dropdown.template.sizeDelta.x, 25f * 12f);
-            }
-            dropdown.SetValueWithoutNotify(0);
-            dropdown.RefreshShownValue();
-            return dropdown;
-        }
-
-        private static void SetArms(Form form, string key)
-        {
-            int index = key != null ? form.ArmsKeys.IndexOf(key) : 0;
-            form.Arms.SetValueWithoutNotify(index < 0 ? 0 : index);
-            form.Arms.RefreshShownValue();
-        }
 
         /// <summary>Keys of the kingdoms with arms in the map's CoA table (without the era variants).</summary>
         private static List<string> ArmsKeys()
@@ -457,15 +459,17 @@ namespace URAH_Kingdoms
         }
 
         /// <summary>A row of the settings' prefab, without its preference logic, its label set.</summary>
-        private static GameObject Row(Parts parts, GameObject prefab, string label, string tip = null)
+        private static GameObject Row(Parts parts, GameObject prefab, string label, string tip = null, Transform parent = null)
         {
-            GameObject row = Object.Instantiate(prefab, parts.Content, worldPositionStays: false);
+            GameObject row = Object.Instantiate(prefab, parent ?? parts.Content, worldPositionStays: false);
             row.name = "Row";
             foreach (UIPreferences.Preference p in row.GetComponentsInChildren<UIPreferences.Preference>(includeInactive: true))
             {
                 Object.DestroyImmediate(p);
             }
+            // the "needs a restart" note: its container, and the label that some prefabs show outside it
             Child<Transform>(row, "id_RestartWarning")?.gameObject.SetActive(false);
+            Child<Transform>(row, "id_RestartWarningLabel")?.gameObject.SetActive(false);
             TextMeshProUGUI l = Child<TextMeshProUGUI>(row, "id_Label");
             if (l != null)
             {
@@ -555,7 +559,7 @@ namespace URAH_Kingdoms
             }
         }
 
-        /// <summary>The colour preview: a square at the right end of the colour field.</summary>
+        /// <summary>The colour preview: a square at the right end of the colour field; a click opens the colour popup.</summary>
         private static Image Swatch(TMP_InputField input)
         {
             var go = new GameObject("Swatch", typeof(RectTransform), typeof(Image), typeof(LayoutElement));
@@ -568,18 +572,19 @@ namespace URAH_Kingdoms
             rt.anchoredPosition = new Vector2(-8f, 0f);
             go.GetComponent<LayoutElement>().ignoreLayout = true;
             var img = go.GetComponent<Image>();
-            img.raycastTarget = false;
+            img.raycastTarget = true; // ColorPicker opens its popup from it
             return img;
         }
 
-        private static void ButtonRow(Parts parts, string label, string text, Action onClick)
+        private static GameObject ButtonRow(Parts parts, string label, string text, Action onClick, Transform parent = null)
         {
-            GameObject row = Row(parts, parts.ButtonRow, label);
+            GameObject row = Row(parts, parts.ButtonRow, label, parent: parent);
             BSGButton button = Child<BSGButton>(row, "id_Button");
             if (button != null)
             {
                 Wire(button, Child<TextMeshProUGUI>(row, "id_ButtonLabel"), text, onClick);
             }
+            return row;
         }
 
         private static void Wire(BSGButton button, TextMeshProUGUI label, string text, Action onClick)
